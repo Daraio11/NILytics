@@ -1,0 +1,1064 @@
+/* ============================================================
+   NILytics — Professional Light Theme v5
+   Brand primary: #E8390E (orange-red)
+   Light-first design inspired by PFF Premium Stats
+   ============================================================ */
+
+/* ── 1. CSS Variables ── */
+:root {
+    --color-primary: #E8390E;
+    --color-bg: #ffffff;
+    --color-bg-secondary: #f6f8fa;
+    --color-surface: #ffffff;
+    --color-sidebar: #f6f8fa;
+    --color-text: #1f2937;
+    --color-text-muted: #6b7280;
+    --color-text-faint: #9ca3af;
+    --color-positive: #16a34a;
+    --color-negative: #dc2626;
+    --color-t1: #E8390E;
+    --color-t2: #F97316;
+    --color-t3: #3B82F6;
+    --color-t4: #6B7280;
+    --color-grade-elite: #16a34a;
+    --color-grade-good: #2563eb;
+    --color-grade-avg: #ca8a04;
+    --color-grade-poor: #9ca3af;
+    --color-border: #e5e7eb;
+    --color-border-light: #d1d5db;
+    --color-hover: #f3f4f6;
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'DM Mono', 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ── 2. Hide default Streamlit sidebar nav (page list only) ── */
+[data-testid="stSidebarNav"] { display: none !important; }
+[data-testid="stSidebarNavItems"] { display: none !important; }
+section[data-testid="stSidebar"] ul[data-testid="stSidebarNavItems"] { display: none !important; }
+
+/* ── 2b. Sidebar expand/collapse buttons (keep functional for JS toggle) ── */
+
+/* ── 3. Remove top dead space & Streamlit chrome ── */
+.block-container {
+    padding-top: 0 !important;
+    padding-bottom: 0.5rem !important;
+    background-color: var(--color-bg) !important;
+}
+/* Hide Streamlit header — custom hamburger toggle in nav bar handles sidebar */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+}
+/* Hide other header buttons (deploy, menu) */
+header[data-testid="stHeader"] [data-testid="stToolbarActions"],
+header[data-testid="stHeader"] [data-testid="stAppDeployButton"],
+header[data-testid="stHeader"] [data-testid="stMainMenu"] {
+    display: none !important;
+}
+#MainMenu { visibility: hidden !important; display: none !important; }
+footer { visibility: hidden !important; display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+
+/* ── 4. Global light styles ── */
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"] {
+    background-color: var(--color-bg) !important;
+    color: var(--color-text) !important;
+    font-family: var(--font-ui);
+}
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
+    font-family: var(--font-ui);
+    color: var(--color-text);
+}
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+.stMarkdown h4, .stMarkdown h5, .stMarkdown h6,
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-ui);
+    color: var(--color-text) !important;
+}
+
+/* ── 5. Sidebar — Light gray panel ── */
+section[data-testid="stSidebar"] {
+    background-color: var(--color-sidebar) !important;
+    border-right: 1px solid var(--color-border) !important;
+}
+section[data-testid="stSidebar"] * {
+    color: var(--color-text) !important;
+}
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stMultiSelect label,
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stTextInput label,
+section[data-testid="stSidebar"] .stNumberInput label,
+section[data-testid="stSidebar"] .stSlider label {
+    text-transform: uppercase !important;
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+    color: var(--color-text-muted) !important;
+    font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"],
+section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] span,
+section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] div,
+section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div,
+section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="select"],
+section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="select"] span,
+section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="select"] div,
+section[data-testid="stSidebar"] .stMultiSelect [data-baseweb="select"] > div {
+    color: var(--color-text) !important;
+    background-color: #ffffff !important;
+    border: 1px solid var(--color-border) !important;
+}
+section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div:hover,
+section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div:focus-within,
+section[data-testid="stSidebar"] .stMultiSelect [data-baseweb="select"] > div:hover,
+section[data-testid="stSidebar"] .stMultiSelect [data-baseweb="select"] > div:focus-within {
+    border-color: var(--color-primary) !important;
+}
+section[data-testid="stSidebar"] .stTextInput input,
+section[data-testid="stSidebar"] .stNumberInput input {
+    color: var(--color-text) !important;
+    background-color: #ffffff !important;
+    border: 1px solid var(--color-border) !important;
+}
+section[data-testid="stSidebar"] .stTextInput input:focus,
+section[data-testid="stSidebar"] .stNumberInput input:focus {
+    border-color: var(--color-primary) !important;
+}
+section[data-testid="stSidebar"] .stSelectbox svg,
+section[data-testid="stSidebar"] .stMultiSelect svg {
+    fill: var(--color-primary) !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    color: var(--color-text) !important;
+    background: #ffffff !important;
+    border: 1px solid var(--color-border) !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    border-color: var(--color-primary) !important;
+    color: var(--color-primary) !important;
+}
+section[data-testid="stSidebar"] .stCaption, section[data-testid="stSidebar"] .stCaption p {
+    color: var(--color-text-faint) !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-top-color: var(--color-border) !important;
+}
+section[data-testid="stSidebar"] a, section[data-testid="stSidebar"] a span {
+    color: var(--color-text) !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+section[data-testid="stSidebar"] a:hover, section[data-testid="stSidebar"] a:hover span {
+    color: var(--color-primary) !important;
+}
+section[data-testid="stSidebar"] [aria-selected="true"] span,
+section[data-testid="stSidebar"] [aria-current="page"] span {
+    color: var(--color-primary) !important;
+    font-weight: 700 !important;
+}
+
+/* ── 6. Top nav bar (.top-nav) ── */
+.top-nav {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 0.5rem;
+    padding: 0;
+    width: 100%;
+}
+.top-nav a {
+    padding: 0.5rem 1.25rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+.top-nav a:hover { color: var(--color-text); }
+.top-nav a.active {
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+}
+
+/* ── 7. Header (.main-header) ── */
+.main-header {
+    border-bottom: 3px solid var(--color-primary);
+    padding: 0.5rem 0 0.6rem 0;
+    margin-bottom: 1.25rem;
+}
+.main-header h1 {
+    color: var(--color-text);
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+.main-header p {
+    color: var(--color-text-muted);
+    margin: 0.15rem 0 0 0;
+    font-size: 0.85rem;
+}
+
+/* ── 8. Leaderboard table (.pff-table) ── */
+.pff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-ui);
+}
+.pff-table thead th {
+    background: #3a4553;
+    color: #ffffff;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    padding: 6px 6px;
+    white-space: nowrap;
+    border: none;
+    border-bottom: 2px solid #e5e7eb;
+}
+.pff-table thead th a {
+    color: #ffffff !important;
+    text-decoration: none;
+}
+.pff-table tbody tr {
+    height: 28px;
+    cursor: pointer;
+    transition: background-color 0.08s;
+}
+.pff-table tbody tr:nth-child(odd) {
+    background-color: #ffffff;
+}
+.pff-table tbody tr:nth-child(even) {
+    background-color: #f9fafb;
+}
+.pff-table tbody tr:hover {
+    background-color: #eef2f7;
+}
+.pff-table tbody td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #1f2937;
+    font-size: 11px;
+}
+.lb-name {
+    font-weight: 600;
+    font-size: 11px;
+    color: #1f2937;
+}
+.lb-school {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.lb-school-cell {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lb-pos { font-size: 11px; color: var(--color-text-muted); }
+.lb-tier { font-size: 11px; }
+.lb-num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.grade-rect {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #FFFFFF;
+    line-height: 1.4;
+}
+.lb-alpha {
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+.player-link {
+    text-decoration: none !important;
+    color: var(--color-text) !important;
+    transition: color 0.15s;
+    cursor: pointer;
+}
+.player-link:hover {
+    color: var(--color-primary) !important;
+    text-decoration: underline !important;
+}
+.player-link:visited {
+    color: var(--color-text) !important;
+}
+.lb-flags {
+    font-size: 16px;
+    letter-spacing: 0.15em;
+}
+.lb-rank {
+    color: #9ca3af;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-align: left;
+}
+
+/* ── 9. Flag filter buttons (.flag-btn) ── */
+.flag-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.flag-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-family: var(--font-ui);
+}
+.flag-btn:hover {
+    background: var(--color-hover);
+    border-color: var(--color-primary);
+    color: var(--color-text);
+}
+.flag-btn.active {
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+/* ── 10. Sort mode selector (.view-toggle) ── */
+.view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
+}
+.view-toggle-btn {
+    padding: 8px 20px;
+    font-weight: 500;
+    font-size: 14px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    font-family: var(--font-ui);
+    transition: all 0.15s;
+}
+.view-toggle-btn:hover { background: var(--color-hover); color: var(--color-text); }
+.view-toggle-btn.active {
+    background: var(--color-primary);
+    color: #FFFFFF;
+    border-radius: 6px;
+}
+
+/* ── 11. Metrics (st.metric cards) ── */
+div[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 16px 20px;
+}
+div[data-testid="stMetric"] label {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted) !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    font-family: var(--font-mono);
+    font-weight: 800;
+    color: var(--color-text) !important;
+}
+
+/* ── 12. Player card styles ── */
+.player-card {
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-primary);
+    border-radius: 8px;
+    padding: 1.75rem 2rem;
+    margin: 1rem 0;
+}
+.player-card .player-name {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--color-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+.player-card .player-meta {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    margin: 0.2rem 0 0 0;
+    font-weight: 500;
+}
+
+/* Tier badges */
+.tier-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFFFFF;
+    line-height: 1.5;
+}
+.tier-badge-t1 { background: var(--color-t1); }
+.tier-badge-t2 { background: var(--color-t2); }
+.tier-badge-t3 { background: var(--color-t3); }
+.tier-badge-t4 { background: var(--color-t4); }
+
+/* Alpha cards */
+.alpha-card-positive {
+    border: 2px solid var(--color-positive);
+    background: #f0fdf4;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+}
+.alpha-card-negative {
+    border: 2px solid var(--color-negative);
+    background: #fef2f2;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+}
+
+/* Section headers */
+.player-card .section-header, .section-header {
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--color-primary);
+    margin-bottom: 0.75rem;
+}
+
+/* Score badges */
+.score-badge {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    min-width: 120px;
+    text-align: center;
+}
+.score-badge .score-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+}
+.score-badge .score-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+    font-family: var(--font-mono);
+}
+.badge-core { background: #f9fafb; border: 2px solid var(--color-text-muted); }
+.badge-core .score-value { color: var(--color-text); }
+.badge-value { background: #f0fdf4; border: 2px solid var(--color-positive); }
+.badge-value .score-value { color: var(--color-positive); }
+.badge-market { background: #fff7ed; border: 2px solid var(--color-primary); }
+.badge-market .score-value { color: var(--color-primary); }
+
+/* ── 13. Tabs (.stTabs) ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0;
+    background-color: var(--color-bg-secondary) !important;
+    border-bottom: 2px solid var(--color-border);
+    border-radius: 8px 8px 0 0;
+    padding: 0 4px;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 3px solid transparent !important;
+    color: var(--color-text-muted) !important;
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.65rem 1.25rem;
+    font-family: var(--font-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    transition: color 0.15s, border-color 0.15s;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: var(--color-text) !important;
+    background: var(--color-hover) !important;
+}
+.stTabs [aria-selected="true"] {
+    background: transparent !important;
+    color: var(--color-primary) !important;
+    border-bottom: 3px solid var(--color-primary) !important;
+    font-weight: 700;
+}
+/* Remove the default Streamlit tab highlight bar */
+.stTabs [data-baseweb="tab-highlight"] {
+    display: none !important;
+}
+/* Tab panel background */
+.stTabs [data-baseweb="tab-panel"] {
+    background-color: var(--color-bg) !important;
+    padding-top: 1rem;
+}
+
+/* ── 14. Buttons (.stButton > button) ── */
+.stButton > button {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-text);
+    background: #ffffff;
+    font-family: var(--font-ui);
+    transition: all 0.15s;
+    padding: 0.4rem 0.8rem !important;
+}
+.stButton > button:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-hover);
+}
+.stButton > button:active {
+    background: var(--color-bg-secondary);
+}
+
+/* ── 15. Depth chart styles (GM Mode) ── */
+.dc-formation {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.dc-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.dc-slot { width: 120px; }
+.dc-card {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 8px;
+    background: #ffffff;
+    text-align: center;
+    font-family: var(--font-ui);
+    transition: box-shadow 0.15s;
+}
+.dc-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+.dc-card-filled { border-left: 3px solid var(--color-primary); }
+.dc-empty {
+    border: 1px dashed var(--color-border);
+    border-radius: 8px;
+    padding: 8px;
+    color: var(--color-text-faint);
+    font-style: italic;
+    text-align: center;
+}
+.dc-divider {
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-border), var(--color-primary), var(--color-border), transparent);
+    margin: 12px 0;
+}
+.dc-pos { font-weight: 800; color: var(--color-text); font-size: 12px; }
+.dc-starter { font-weight: 700; color: var(--color-text); }
+.dc-backup { color: var(--color-text-muted); font-weight: 500; }
+
+/* Legacy depth chart table */
+.depth-chart {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-family: var(--font-ui);
+}
+.depth-chart th {
+    background: #3a4553;
+    color: #ffffff;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.depth-chart td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+    color: var(--color-text);
+}
+.depth-chart tr:hover { background: var(--color-hover); }
+
+/* ── 16. Empty state ── */
+.empty-state {
+    text-align: center;
+    border: 2px dashed var(--color-border);
+    border-radius: 12px;
+    padding: 60px 20px;
+    background: #ffffff;
+}
+.empty-state h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+}
+.empty-state p { color: var(--color-text-muted); font-size: 14px; }
+
+/* ── 17. Methodology cards ── */
+.method-card {
+    background: #ffffff;
+    padding: 20px 24px;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-primary);
+}
+.method-card h4 { margin-top: 0; font-weight: 700; color: var(--color-text); }
+.method-card p { color: var(--color-text-muted); font-size: 14px; line-height: 1.6; }
+
+/* ── 17b. Content max-width and page spacing ── */
+.stMainBlockContainer {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* ── 17c. Search bar consistency ── */
+.stTextInput input:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 1px var(--color-primary) !important;
+}
+.stTextInput input {
+    border: 1px solid var(--color-border) !important;
+    border-radius: 6px !important;
+    padding: 8px 12px !important;
+}
+
+/* ── 17d. Checkbox accent color ── */
+.stCheckbox input[type="checkbox"] {
+    accent-color: var(--color-primary) !important;
+}
+
+/* ── 18. Footer ── */
+.app-footer {
+    font-size: 12px;
+    color: var(--color-text-faint);
+    border-top: 1px solid var(--color-border);
+    padding: 16px;
+    text-align: center;
+    margin-top: 2rem;
+    background: var(--color-bg-secondary);
+}
+
+/* ── 19. Dropdown menus (light) ── */
+[data-baseweb="popover"],
+[data-baseweb="popover"] > div {
+    background-color: #ffffff !important;
+    border: 1px solid var(--color-border) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+[data-baseweb="menu"] li,
+[data-baseweb="menu"] li span,
+[data-baseweb="menu"] [role="option"],
+[data-baseweb="menu"] [role="option"] span,
+ul[role="listbox"] li,
+ul[role="listbox"] li span {
+    color: var(--color-text) !important;
+    background-color: #ffffff !important;
+}
+[data-baseweb="menu"] li:hover,
+[data-baseweb="menu"] [role="option"]:hover,
+ul[role="listbox"] li:hover {
+    background-color: var(--color-hover) !important;
+    color: var(--color-primary) !important;
+}
+[data-baseweb="menu"] [aria-selected="true"],
+[data-baseweb="menu"] [aria-selected="true"] span,
+ul[role="listbox"] [aria-selected="true"],
+ul[role="listbox"] [aria-selected="true"] span {
+    background-color: var(--color-hover) !important;
+    color: var(--color-primary) !important;
+}
+
+/* Main area selectbox/input styling (light) */
+.stSelectbox div[data-baseweb="select"],
+.stSelectbox div[data-baseweb="select"] span,
+.stSelectbox div[data-baseweb="select"] div,
+.stSelectbox [data-baseweb="select"] > div,
+.stMultiSelect div[data-baseweb="select"],
+.stMultiSelect div[data-baseweb="select"] span,
+.stTextInput input {
+    color: var(--color-text) !important;
+    background-color: #ffffff !important;
+}
+.stSelectbox [data-baseweb="select"] > div {
+    border-color: var(--color-border) !important;
+}
+.stSelectbox [data-baseweb="select"] > div:hover,
+.stSelectbox [data-baseweb="select"] > div:focus-within {
+    border-color: var(--color-primary) !important;
+}
+.stSelectbox svg, .stMultiSelect svg {
+    fill: var(--color-primary) !important;
+}
+
+/* ── 20. Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+* { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+
+/* ── 21. Radio buttons — segmented control / pill style ── */
+.stRadio > div { gap: 0 !important; }
+.stRadio [role="radiogroup"] {
+    gap: 0 !important;
+    display: inline-flex !important;
+    background: #ffffff !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    padding: 3px !important;
+}
+.stRadio [role="radiogroup"] label {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    color: var(--color-text-muted) !important;
+    font-family: var(--font-ui) !important;
+    padding: 6px 18px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+    background: transparent !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+}
+.stRadio [role="radiogroup"] label:hover {
+    color: var(--color-text) !important;
+    background: var(--color-hover) !important;
+}
+/* Hide the native radio circle */
+.stRadio [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+    pointer-events: none;
+}
+.stRadio [role="radiogroup"] input[type="radio"] {
+    display: none !important;
+}
+/* Selected radio pill */
+.stRadio [data-checked="true"] label,
+.stRadio [role="radiogroup"] label:has(input[aria-checked="true"]) {
+    background: var(--color-primary) !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}
+.stRadio [data-checked="true"] label p,
+.stRadio [data-checked="true"] label span,
+.stRadio [aria-checked="true"] + div p,
+.stRadio [aria-checked="true"] + div span {
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}
+/* Horizontal radio (used for view toggles) — ensure row layout */
+.stRadio [data-testid="stWidgetLabel"] {
+    display: none !important;
+}
+/* When radio has a visible label, style it */
+.stRadio > label {
+    text-transform: uppercase !important;
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+    color: var(--color-text-muted) !important;
+    font-weight: 600 !important;
+    margin-bottom: 6px !important;
+}
+
+/* ── Utility classes ── */
+.opp-positive { color: var(--color-positive); font-weight: 700; }
+.opp-negative { color: var(--color-negative); font-weight: 700; }
+.opp-neutral  { color: var(--color-text-muted); font-weight: 600; }
+
+.traj-up       { color: var(--color-positive); }
+.traj-down     { color: var(--color-negative); }
+.traj-stable   { color: var(--color-text-muted); }
+.traj-breakout { color: var(--color-primary); font-weight: 800; }
+
+.grade-elite { color: var(--color-grade-elite); }
+.grade-good  { color: var(--color-grade-good); }
+.grade-avg   { color: var(--color-grade-avg); }
+.grade-poor  { color: var(--color-grade-poor); }
+.grade-bg-elite { background: var(--color-grade-elite); }
+.grade-bg-good  { background: var(--color-grade-good); }
+.grade-bg-avg   { background: var(--color-grade-avg); }
+.grade-bg-poor  { background: var(--color-grade-poor); }
+
+/* Flag chip base */
+.flag-chip {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+/* Flag variants (light-compatible) */
+.flag-breakout   { background: rgba(232,57,14,0.10); color: #c2410c; border-color: rgba(232,57,14,0.25); }
+.flag-hidden     { background: rgba(22,163,74,0.10); color: #15803d; border-color: rgba(22,163,74,0.25); }
+.flag-regression { background: rgba(220,38,38,0.10); color: #b91c1c; border-color: rgba(220,38,38,0.25); }
+.flag-portal     { background: rgba(124,58,237,0.10); color: #7c3aed; border-color: rgba(124,58,237,0.25); }
+.flag-experience { background: rgba(37,99,235,0.10); color: #2563eb; border-color: rgba(37,99,235,0.25); }
+
+/* ── Markdown text ── */
+.stMarkdown, .stMarkdown p { color: var(--color-text); }
+.stCaption, .stCaption p { color: var(--color-text-muted) !important; }
+
+/* ── Section dividers ── */
+hr { border: none; border-top: 1px solid var(--color-border); margin: 1.25rem 0; }
+
+/* ── Text/Number inputs ── */
+.stTextInput input {
+    background-color: #ffffff !important;
+    border-color: var(--color-border) !important;
+    color: var(--color-text) !important;
+}
+.stTextInput input:focus { border-color: var(--color-primary) !important; }
+.stNumberInput input {
+    color: var(--color-text) !important;
+    background-color: #ffffff !important;
+}
+
+/* ── Labels ── */
+.stSelectbox label, .stMultiSelect label, .stTextInput label {
+    color: var(--color-text-muted) !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+
+/* ── Multiselect ── */
+.stMultiSelect [data-baseweb="select"] > div {
+    background-color: #ffffff !important;
+    border-color: var(--color-border) !important;
+}
+.stMultiSelect [data-baseweb="tag"] {
+    background-color: var(--color-primary) !important;
+    color: #fff !important;
+}
+
+/* ── Checkbox ── */
+.stCheckbox label span { color: var(--color-text) !important; }
+
+/* ── Alert boxes ── */
+[data-testid="stAlert"] {
+    background-color: #ffffff !important;
+    border-color: var(--color-border) !important;
+    color: var(--color-text) !important;
+}
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] {
+    background-color: #ffffff !important;
+    border-radius: 8px;
+}
+
+/* ── Expander ── */
+.streamlit-expanderHeader {
+    background-color: var(--color-bg-secondary) !important;
+    color: var(--color-text) !important;
+    border-color: var(--color-border) !important;
+}
+
+/* ============================================================
+   RESPONSIVE / MOBILE BREAKPOINTS
+   ============================================================ */
+
+/* ── Tablet (max-width: 1024px) ── */
+@media (max-width: 1024px) {
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    .pff-table {
+        font-size: 11px;
+    }
+    div[data-testid="stMetric"] {
+        padding: 12px 14px;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+    }
+}
+
+/* ── Mobile (max-width: 768px) ── */
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+
+    /* Table: smaller font, tighter cells */
+    .pff-table {
+        font-size: 10px;
+    }
+    .pff-table th,
+    .pff-table td {
+        padding: 4px 6px;
+    }
+
+    /* Hide School column (3rd) and Flags column (last) */
+    .pff-table th:nth-child(3),
+    .pff-table td:nth-child(3),
+    .pff-table th:last-child,
+    .pff-table td:last-child {
+        display: none;
+    }
+
+    /* Nav bar links */
+    .top-nav a {
+        font-size: 11px;
+        padding: 0.4rem 0.8rem;
+    }
+
+    /* Active nav label */
+    .nav-active-label {
+        font-size: 11px;
+    }
+
+    /* Logo */
+    .top-nav img,
+    .stImage img,
+    .main-header img {
+        max-width: 200px !important;
+    }
+
+    /* Footer */
+    .app-footer {
+        font-size: 11px;
+        padding: 12px 8px;
+    }
+
+    /* KPI cards: smaller values */
+    div[data-testid="stMetric"] {
+        padding: 10px 12px;
+    }
+    div[data-testid="stMetric"] label {
+        font-size: 9px !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 0.95rem !important;
+    }
+
+    /* Player card adjustments */
+    .player-card {
+        padding: 1rem 1.25rem;
+    }
+    .player-card .player-name {
+        font-size: 1.2rem;
+    }
+}
+
+/* ── Small mobile (max-width: 480px) ── */
+@media (max-width: 480px) {
+    .pff-table {
+        font-size: 9px;
+    }
+
+    /* Nav links */
+    .top-nav a {
+        font-size: 10px;
+        padding: 0.3rem 0.5rem;
+    }
+
+    /* Logo */
+    .top-nav img,
+    .stImage img,
+    .main-header img {
+        max-width: 160px !important;
+    }
+
+    /* Hide Trend column (8th) on very small screens */
+    .pff-table th:nth-child(8),
+    .pff-table td:nth-child(8) {
+        display: none;
+    }
+
+    /* Even smaller KPI values */
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 0.85rem !important;
+    }
+}
+
+/* ============================================================
+   RESPONSIVE / MOBILE OVERRIDES
+   Added 2026-04-01 — additional breakpoints for improved
+   mobile & tablet experience
+   ============================================================ */
+
+/* ── Tablet (max-width: 1024px) ── */
+@media (max-width: 1024px) {
+    .block-container { padding: 1rem !important; }
+    .pff-table { font-size: 11px; }
+}
+
+/* ── Mobile (max-width: 768px) ── */
+@media (max-width: 768px) {
+    .block-container { padding: 0.5rem !important; }
+    .pff-table { font-size: 10px; }
+    .pff-table th, .pff-table td { padding: 4px 6px; }
+    /* Hide School (3rd col) and Flags (last col) on mobile */
+    .pff-table th:nth-child(3), .pff-table td:nth-child(3),
+    .pff-table th:last-child, .pff-table td:last-child { display: none; }
+    /* Nav links smaller */
+    .nav-strip a { font-size: 11px !important; padding: 0.4rem 0.8rem !important; }
+    /* Logo smaller */
+    div[data-testid="stImage"] img { max-width: 200px !important; }
+}
+
+/* ── Small mobile (max-width: 480px) ── */
+@media (max-width: 480px) {
+    .pff-table { font-size: 9px; }
+    .nav-strip a { font-size: 10px !important; padding: 0.3rem 0.5rem !important; }
+    div[data-testid="stImage"] img { max-width: 160px !important; }
+    /* Also hide Trend col (8th) */
+    .pff-table th:nth-child(8), .pff-table td:nth-child(8) { display: none; }
+}

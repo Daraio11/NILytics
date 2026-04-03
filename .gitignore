@@ -1,0 +1,31 @@
+# Environment & secrets
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# Raw PFF data (already imported to Supabase)
+*.csv
+data/raw/
+data/import_csv.py
+data/organize_csvs.py
+data/scrapers/
+
+# Keep recruit CSVs (app reads these at runtime)
+!data/recruits/*.csv
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude
+.claude/

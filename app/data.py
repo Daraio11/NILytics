@@ -158,6 +158,250 @@ def get_transfer_status(player_id: int) -> list[dict]:
     return resp.data or []
 
 
+def get_team_departures(user_email: str, school: str, season: int) -> set:
+    """Return the set of player_ids the user has marked as departed for this team+season."""
+    sb = get_supabase()
+    resp = (sb.table('team_departures')
+            .select('player_id')
+            .eq('user_email', user_email)
+            .eq('school', school)
+            .eq('season', season)
+            .execute())
+    return {int(r['player_id']) for r in (resp.data or [])}
+
+
+def mark_player_departed(user_email: str, school: str, season: int, player_id: int):
+    """Mark a single player as departed for this team+season (idempotent)."""
+    sb = get_supabase()
+    try:
+        sb.table('team_departures').insert({
+            'user_email': user_email,
+            'school': school,
+            'season': season,
+            'player_id': int(player_id),
+        }).execute()
+    except Exception:
+        pass  # UNIQUE constraint means already marked — safe to ignore
+
+
+def unmark_player_departed(user_email: str, school: str, season: int, player_id: int):
+    """Restore a player to the projected roster (removes the departure mark)."""
+    sb = get_supabase()
+    (sb.table('team_departures').delete()
+     .eq('user_email', user_email)
+     .eq('school', school)
+     .eq('season', season)
+     .eq('player_id', int(player_id))
+     .execute())
+
+
+def clear_team_departures(user_email: str, school: str, season: int):
+    """Remove every departure mark for this team+season."""
+    sb = get_supabase()
+    (sb.table('team_departures').delete()
+     .eq('user_email', user_email)
+     .eq('school', school)
+     .eq('season', season)
+     .execute())
+
+
+@st.cache_data(ttl=600)
+def _load_seasons_played_map(school: str, season: int, player_ids: tuple) -> dict:
+    """Return {player_id: total_seasons_with_stats_ever} for a given set of pids."""
+    if not player_ids:
+        return {}
+    sb = get_supabase()
+    # Use rushing_stats as a cheap source since every position appears somewhere.
+    # Actually we need all five tables. Query each and union.
+    seasons_by_pid: dict[int, set] = {}
+
+    for table in ('passing_stats', 'rushing_stats', 'receiving_stats',
+                  'blocking_stats', 'defense_stats'):
+        try:
+            # Batch the IN query
+            batch = list(player_ids)
+            rows = []
+            for i in range(0, len(batch), 500):
+                chunk = batch[i:i + 500]
+                resp = (sb.table(table).select('player_id, season')
+                        .in_('player_id', chunk).execute())
+                rows.extend(resp.data or [])
+            for r in rows:
+                pid = int(r['player_id'])
+                seasons_by_pid.setdefault(pid, set()).add(int(r['season']))
+        except Exception:
+            continue
+
+    return {pid: len(ss) for pid, ss in seasons_by_pid.items()}
+
+
+@st.cache_data(ttl=600)
+def load_team_roster(school: str, season: int) -> pd.DataFrame:
+    """
+    Load the FULL roster for a team in a given season by querying all 5 PFF stats
+    tables for team_name = school. Returns every player who appeared in a box score,
+    whether or not they qualified for eligibility scoring.
+
+    Merges in:
+      - player_scores (core_grade, output_score, tier, adjusted_value) if available
+      - alpha_signals (market_value, opportunity_score, trajectory_flag, flags) if available
+      - players (name, position, class_year, etc.)
+      - portal_history (transferred, transfer_from) if this season
+
+    Adds `eligibility_status` column: 'eligible' (has v1.1 score) or 'depth'
+    (played but didn't meet scoring threshold).
+    """
+    sb = get_supabase()
+
+    # 1. Collect all player_ids + position + snaps per stats table
+    stats_tables = [
+        ('passing_stats', 'passing_snaps'),
+        ('rushing_stats', 'attempts'),
+        ('receiving_stats', 'routes'),
+        ('blocking_stats', 'snap_counts_block'),
+        ('defense_stats', 'snap_counts_defense'),
+    ]
+
+    pid_rows = {}  # pid -> {position, snaps}
+    for table_name, snap_col in stats_tables:
+        try:
+            rows = _paginated_fetch(
+                sb.table(table_name)
+                .select(f'player_id, position, {snap_col}')
+                .eq('team_name', school)
+                .eq('season', season)
+            )
+            for r in rows:
+                pid = r.get('player_id')
+                if pid is None:
+                    continue
+                snaps = float(r.get(snap_col, 0) or 0)
+                if pid not in pid_rows:
+                    pid_rows[pid] = {'position_raw': r.get('position'), 'snaps': snaps, 'stat_table': table_name}
+                else:
+                    # Keep the higher snap count as the primary record
+                    if snaps > pid_rows[pid]['snaps']:
+                        pid_rows[pid] = {'position_raw': r.get('position'), 'snaps': snaps, 'stat_table': table_name}
+        except Exception:
+            continue
+
+    if not pid_rows:
+        return pd.DataFrame()
+
+    all_pids = list(pid_rows.keys())
+
+    # 2. Fetch player info for these pids
+    players_data = {}
+    batch_size = 500
+    for i in range(0, len(all_pids), batch_size):
+        batch = all_pids[i:i + batch_size]
+        resp = (sb.table('players')
+                .select('player_id, name, position, school, conference, market, class_year')
+                .in_('player_id', batch)
+                .execute())
+        for p in resp.data or []:
+            players_data[p['player_id']] = p
+
+    # 3. Fetch scores (may be empty for depth players who didn't qualify)
+    scores_data = {}
+    for i in range(0, len(all_pids), batch_size):
+        batch = all_pids[i:i + batch_size]
+        resp = (sb.table('player_scores')
+                .select('player_id, core_grade, output_score, tier, adjusted_value, base_value')
+                .eq('season', season)
+                .eq('model_version', 'v1.1')
+                .in_('player_id', batch)
+                .execute())
+        for s in resp.data or []:
+            scores_data[s['player_id']] = s
+
+    # 4. Fetch alpha signals (market, opportunity) for eligible players
+    signals_data = {}
+    for i in range(0, len(all_pids), batch_size):
+        batch = all_pids[i:i + batch_size]
+        resp = (sb.table('alpha_signals')
+                .select('player_id, market_value, opportunity_score, trajectory_flag, flags')
+                .eq('season', season)
+                .in_('player_id', batch)
+                .execute())
+        for s in resp.data or []:
+            signals_data[s['player_id']] = s
+
+    # 5. Fetch transfer status for the season
+    try:
+        transfer_map = load_transfer_map(season)
+    except Exception:
+        transfer_map = {}
+
+    # 5b. Total seasons played (any stats) — proxy for remaining eligibility.
+    # Class_year data is unpopulated in our DB, so seasons_played is the best
+    # auto-signal for "how much college football this player has on tape."
+    try:
+        seasons_played_map = _load_seasons_played_map(school, season, tuple(all_pids))
+    except Exception:
+        seasons_played_map = {}
+
+    # PFF → our position taxonomy
+    POSITION_MAP = {
+        'HB': 'RB', 'T': 'OT', 'C': 'IOL', 'G': 'IOL',
+        'ED': 'EDGE', 'DI': 'IDL', 'LB': 'LB',
+        'QB': 'QB', 'WR': 'WR', 'TE': 'TE', 'CB': 'CB', 'S': 'S',
+    }
+
+    # 6. Build rows
+    records = []
+    for pid, info in pid_rows.items():
+        player = players_data.get(pid, {})
+        scores = scores_data.get(pid, {})
+        signals = signals_data.get(pid, {})
+
+        pos_raw = info.get('position_raw') or player.get('position') or '?'
+        position = POSITION_MAP.get(pos_raw, pos_raw)
+
+        _seasons_played = seasons_played_map.get(pid, 1)
+        record = {
+            'player_id': pid,
+            'name': player.get('name', f'Player {pid}'),
+            'position': position,
+            'position_raw': pos_raw,
+            'school': player.get('school', school),
+            'conference': player.get('conference', ''),
+            'market': player.get('market', ''),
+            'class_year': player.get('class_year', ''),
+            'seasons_played': _seasons_played,
+            'snaps': info.get('snaps', 0),
+            'eligibility_status': 'eligible' if pid in scores_data else 'depth',
+            'core_grade': scores.get('core_grade'),
+            'output_score': scores.get('output_score'),
+            'tier': scores.get('tier', '—'),
+            'adjusted_value': scores.get('adjusted_value'),
+            'market_value': signals.get('market_value'),
+            'opportunity_score': signals.get('opportunity_score'),
+            'trajectory_flag': signals.get('trajectory_flag'),
+            'flags': signals.get('flags', '[]'),
+            'transferred': pid in transfer_map,
+            'transfer_from': transfer_map.get(pid, {}).get('from'),
+            # Rough class estimate: seasons_played ≈ years since first appearance
+            # With 5-year eligibility typical: 1→FR, 2→SO, 3→JR, 4→SR, 5+→RSR/GS
+            'est_class': (
+                'FR' if _seasons_played <= 1 else
+                'SO' if _seasons_played == 2 else
+                'JR' if _seasons_played == 3 else
+                'SR' if _seasons_played == 4 else
+                'GS'  # 5+
+            ),
+        }
+        records.append(record)
+
+    df = pd.DataFrame(records)
+    # Numeric conversion for sort stability
+    for col in ['core_grade', 'output_score', 'adjusted_value', 'market_value',
+                'opportunity_score', 'snaps']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
+
 @st.cache_data(ttl=300)
 def load_player_history(player_id: int):
     """Load all season data for a specific player."""

@@ -1,7 +1,8 @@
 """
 NILytics — Team / School Roster View
-Aggregated roster intelligence for a single school: KPIs, positional
-breakdown, full roster with sort/filter, and top performers.
+Full roster intelligence from the GM's perspective: every player on the team
+(50-80 per school, not just eligible scorers), with filters for projecting
+next-season return, graduating SRs, and transfers-out.
 """
 import streamlit as st
 import pandas as pd
@@ -10,7 +11,9 @@ import json
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.data import load_leaderboard
+from app.data import (load_leaderboard, load_team_roster,
+                       get_team_departures, mark_player_departed, unmark_player_departed,
+                       clear_team_departures)
 from app.components.card_front import fmt_money, TIER_COLORS
 from app.components.nav import render_logo_and_nav, inject_fonts, render_footer
 from app.auth import check_auth, render_user_sidebar
@@ -72,18 +75,27 @@ st.markdown("""
     font-weight: 800;
     color: #111827;
 }
-.roster-row {
-    padding: 6px 10px;
-    border-bottom: 1px solid #f3f4f6;
-    font-size: 13px;
+.depth-row {
+    background: #fafbfc;
+    color: #6b7280;
+    font-style: italic;
 }
-.roster-row:hover { background: #fafafa; }
+.status-pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
 </style>
 """, unsafe_allow_html=True)
 
 render_logo_and_nav(active_page='team')
 user = check_auth()
 render_user_sidebar()
+user_email = user.get('email', 'test@nilytics.com')
 
 # ── Resolve target school (query param OR selectbox) ──
 qp = st.query_params
@@ -91,18 +103,17 @@ qp_school = qp.get('school', None) if 'school' in qp else None
 
 season = st.session_state.get('team_season', 2025)
 
-# Load full leaderboard for the season so we can derive the school list + stats
+# Load the full leaderboard once to derive the school list (fast — already cached)
 with st.spinner("Loading season data..."):
-    df_all = load_leaderboard(season)
+    df_lb = load_leaderboard(season)
 
-if df_all.empty:
+if df_lb.empty:
     st.info("No data for this season yet.")
     render_footer()
     st.stop()
 
-schools_available = sorted(df_all['school'].dropna().unique().tolist())
+schools_available = sorted(df_lb['school'].dropna().unique().tolist())
 
-# Default school: query param > session > first SEC alphabetically
 default_school = qp_school or st.session_state.get('team_school', None)
 if default_school not in schools_available:
     default_school = schools_available[0] if schools_available else None
@@ -128,11 +139,12 @@ with _h3:
     if st.button("← Leaderboard", use_container_width=True, key="team_back_lb"):
         st.switch_page("pages/01_leaderboard.py")
 
-# ── Filter dataset to this school ──
-df = df_all[df_all['school'] == selected_school].copy()
+# ── Load the FULL roster (all players with any stats, not just eligible) ──
+with st.spinner(f"Loading {selected_school} roster..."):
+    df = load_team_roster(selected_school, season_sel)
 
 if df.empty:
-    st.info(f"No eligible players for {selected_school} in {season_sel}.")
+    st.info(f"No roster data for {selected_school} in {season_sel}.")
     render_footer()
     st.stop()
 
@@ -146,65 +158,123 @@ st.markdown(
     f'<div style="font-size:24px;font-weight:800;letter-spacing:0.02em;">{selected_school}</div>'
     f'<div style="font-size:12px;background:rgba(255,255,255,0.12);color:#ffffff;'
     f'padding:3px 10px;border-radius:999px;font-weight:700;letter-spacing:0.06em;">{conference} · {market}</div>'
-    f'<div style="margin-left:auto;font-size:12px;color:#d1d5db;">{season_sel} Season</div>'
+    f'<div style="margin-left:auto;font-size:12px;color:#d1d5db;">{season_sel} Season · {len(df)} rostered</div>'
     f'</div>',
     unsafe_allow_html=True,
 )
 
+# ── Roster Build Mode (Projection Toggle) ──
+# Persist manual departures in DB so GMs don't lose their work on refresh.
+_dep_cache_key = f'dep_cache_{selected_school}_{season_sel}'
+if _dep_cache_key not in st.session_state:
+    try:
+        st.session_state[_dep_cache_key] = get_team_departures(user_email, selected_school, season_sel)
+    except Exception:
+        st.session_state[_dep_cache_key] = set()
+departures = st.session_state[_dep_cache_key]
+
+_m1, _m2, _m3 = st.columns([2, 2, 2])
+with _m1:
+    mode = st.radio(
+        "Roster Mode",
+        ["Full Roster", f"Projected {season_sel + 1} Returners"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"mode_{selected_school}_{season_sel}",
+    )
+projecting = mode.startswith("Projected")
+with _m2:
+    if projecting:
+        st.caption(
+            f"🔮 Projecting **{season_sel + 1}**: hides players with 4+ seasons of stats (likely graduating) "
+            "plus any you've marked 🚪 departed."
+        )
+    else:
+        st.caption(f"📋 Showing the full **{season_sel}** roster as-played.")
+with _m3:
+    _dep_count = len(departures)
+    if _dep_count > 0:
+        if st.button(f"Restore all {_dep_count} departure{'s' if _dep_count != 1 else ''}",
+                     key="clear_departures", use_container_width=True):
+            try:
+                clear_team_departures(user_email, selected_school, season_sel)
+            except Exception:
+                pass
+            st.session_state[_dep_cache_key] = set()
+            st.rerun()
+
+# Apply projection filter: hide manual departures AND anyone with 4+ seasons of stats
+def _is_returning(row):
+    pid = int(row.get('player_id'))
+    if pid in departures:
+        return False
+    sp = int(row.get('seasons_played', 1) or 1)
+    if sp >= 4:
+        return False
+    return True
+
+if projecting:
+    df = df[df.apply(_is_returning, axis=1)].copy()
+
+# Split eligible vs depth for KPI computation (use eligible for value aggregates)
+eligible_df = df[df['eligibility_status'] == 'eligible'].copy()
+
 # ── KPI Cards ──
 roster_size = len(df)
-avg_grade = df['core_grade'].fillna(0).mean() if 'core_grade' in df.columns else 0
-total_value = df['adjusted_value'].fillna(0).sum() if 'adjusted_value' in df.columns else 0
-total_market = df['market_value'].fillna(0).sum() if 'market_value' in df.columns else 0
-total_alpha = df['opportunity_score'].fillna(0).sum() if 'opportunity_score' in df.columns else 0
+depth_count = int((df['eligibility_status'] == 'depth').sum())
+eligible_count = roster_size - depth_count
 
-# Top position identified for "Best Unit"
+avg_grade = eligible_df['core_grade'].dropna().mean() if not eligible_df.empty else 0
+total_value = eligible_df['adjusted_value'].dropna().sum() if not eligible_df.empty else 0
+total_market = eligible_df['market_value'].dropna().sum() if not eligible_df.empty else 0
+total_alpha = eligible_df['opportunity_score'].dropna().sum() if not eligible_df.empty else 0
+
 best_unit = "—"
-if not df.empty and 'core_grade' in df.columns and 'position' in df.columns:
-    pos_avg = df.groupby('position')['core_grade'].mean().sort_values(ascending=False)
+if not eligible_df.empty and 'position' in eligible_df.columns:
+    pos_avg = eligible_df.groupby('position')['core_grade'].mean().dropna().sort_values(ascending=False)
     if not pos_avg.empty:
         best_unit = f"{pos_avg.index[0]} ({pos_avg.iloc[0]:.1f})"
 
-# Tier counts
-t1_count = len(df[df['tier'] == 'T1']) if 'tier' in df.columns else 0
-t2_count = len(df[df['tier'] == 'T2']) if 'tier' in df.columns else 0
+t1_count = int((eligible_df['tier'] == 'T1').sum()) if 'tier' in eligible_df.columns else 0
+t2_count = int((eligible_df['tier'] == 'T2').sum()) if 'tier' in eligible_df.columns else 0
 
 _k1, _k2, _k3, _k4, _k5 = st.columns(5)
 with _k1:
     st.markdown(
-        f'<div class="team-kpi"><div class="label">Eligible Roster</div>'
+        f'<div class="team-kpi"><div class="label">Total Rostered</div>'
         f'<div class="value">{roster_size}</div>'
-        f'<div class="sub">T1: {t1_count} · T2: {t2_count}</div></div>',
+        f'<div class="sub">{eligible_count} scored · {depth_count} depth</div></div>',
         unsafe_allow_html=True,
     )
 with _k2:
     st.markdown(
         f'<div class="team-kpi"><div class="label">Avg Core Grade</div>'
         f'<div class="value">{avg_grade:.1f}</div>'
-        f'<div class="sub">Team-wide PFF composite</div></div>',
+        f'<div class="sub">T1: {t1_count} · T2: {t2_count}</div></div>',
         unsafe_allow_html=True,
     )
 with _k3:
     st.markdown(
         f'<div class="team-kpi"><div class="label">Total Value</div>'
-        f'<div class="value" style="color:#16a34a;">{fmt_money(int(total_value))}</div>'
+        f'<div class="value" style="color:#16a34a;">{fmt_money(int(total_value) if pd.notna(total_value) else 0)}</div>'
         f'<div class="sub">Production worth</div></div>',
         unsafe_allow_html=True,
     )
 with _k4:
     st.markdown(
         f'<div class="team-kpi"><div class="label">Total Market Cost</div>'
-        f'<div class="value" style="color:#dc2626;">{fmt_money(int(total_market))}</div>'
+        f'<div class="value" style="color:#dc2626;">{fmt_money(int(total_market) if pd.notna(total_market) else 0)}</div>'
         f'<div class="sub">What NIL pays</div></div>',
         unsafe_allow_html=True,
     )
 with _k5:
-    _alpha_color = '#16a34a' if total_alpha > 0 else '#dc2626' if total_alpha < 0 else '#6b7280'
-    _alpha_label = 'Undervalued' if total_alpha > 0 else 'Overvalued' if total_alpha < 0 else 'Fair'
-    _alpha_sign = '+' if total_alpha > 0 else ''
+    _alpha_int = int(total_alpha) if pd.notna(total_alpha) else 0
+    _alpha_color = '#16a34a' if _alpha_int > 0 else '#dc2626' if _alpha_int < 0 else '#6b7280'
+    _alpha_label = 'Undervalued' if _alpha_int > 0 else 'Overvalued' if _alpha_int < 0 else 'Fair'
+    _alpha_sign = '+' if _alpha_int > 0 else ''
     st.markdown(
         f'<div class="team-kpi"><div class="label">Team Alpha</div>'
-        f'<div class="value" style="color:{_alpha_color};">{_alpha_sign}{fmt_money(int(total_alpha))}</div>'
+        f'<div class="value" style="color:{_alpha_color};">{_alpha_sign}{fmt_money(_alpha_int)}</div>'
         f'<div class="sub">{_alpha_label} · Best: {best_unit}</div></div>',
         unsafe_allow_html=True,
     )
@@ -214,37 +284,38 @@ st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 # ── Positional Breakdown ──
 st.markdown("### Positional Breakdown")
 
-# Group by position
 if 'position' in df.columns:
-    pos_stats = (
-        df.groupby('position')
-        .agg(
-            count=('player_id', 'count'),
-            avg_grade=('core_grade', 'mean'),
-            total_val=('adjusted_value', 'sum'),
-            total_mkt=('market_value', 'sum'),
-            total_alpha=('opportunity_score', 'sum'),
-        )
-        .reset_index()
-        .sort_values('avg_grade', ascending=False)
-    )
-    pos_stats['avg_grade'] = pos_stats['avg_grade'].fillna(0)
+    def _pos_agg(gdf):
+        return pd.Series({
+            'count': len(gdf),
+            'eligible': int((gdf['eligibility_status'] == 'eligible').sum()),
+            'avg_grade': gdf['core_grade'].dropna().mean() if gdf['core_grade'].notna().any() else float('nan'),
+            'total_val': gdf['adjusted_value'].dropna().sum(),
+            'total_alpha': gdf['opportunity_score'].dropna().sum(),
+        })
 
-    # Render pos cards in a responsive grid: 4 per row
+    pos_stats = (df.groupby('position')
+                 .apply(_pos_agg, include_groups=False)
+                 .reset_index()
+                 .sort_values('count', ascending=False))
+
     pos_cols = st.columns(4)
     for i, (_, r) in enumerate(pos_stats.iterrows()):
         with pos_cols[i % 4]:
-            _avg_g = r['avg_grade']
-            _alpha = r['total_alpha'] or 0
+            _avg_g = r['avg_grade'] if pd.notna(r['avg_grade']) else 0
+            _alpha = r['total_alpha'] if pd.notna(r['total_alpha']) else 0
             _alpha_c = '#16a34a' if _alpha > 0 else '#dc2626' if _alpha < 0 else '#6b7280'
             _alpha_sign = '+' if _alpha > 0 else ''
+            _depth_note = f'{int(r["count"]) - int(r["eligible"])} depth' if r["count"] > r["eligible"] else ''
             st.markdown(
                 f'<div class="pos-card">'
                 f'<div style="display:flex;justify-content:space-between;align-items:baseline;">'
                 f'<span class="pos-label">{r["position"]}</span>'
                 f'<span class="pos-count">{int(r["count"])}</span></div>'
                 f'<div style="font-size:11px;color:#6b7280;margin-top:4px;">'
-                f'Avg Grade <b style="color:#111827;">{_avg_g:.1f}</b></div>'
+                f'Avg Grade <b style="color:#111827;">{_avg_g:.1f}</b>'
+                + (f' · <span style="color:#9ca3af;">{_depth_note}</span>' if _depth_note else '')
+                + '</div>'
                 f'<div style="font-size:11px;color:{_alpha_c};margin-top:2px;">'
                 f'Alpha <b>{_alpha_sign}{fmt_money(int(_alpha))}</b></div>'
                 f'</div>',
@@ -261,7 +332,7 @@ _tp1, _tp2 = st.columns(2)
 with _tp1:
     st.markdown("### Top Performers")
     st.caption("Highest Core Grade on the roster")
-    _top_perf = df.nlargest(5, 'core_grade') if 'core_grade' in df.columns else pd.DataFrame()
+    _top_perf = eligible_df.nlargest(5, 'core_grade') if not eligible_df.empty else pd.DataFrame()
     if not _top_perf.empty:
         for _, r in _top_perf.iterrows():
             _tier = r.get('tier', 'T4')
@@ -272,21 +343,21 @@ with _tp1:
                 f'<div><a href="/player_card?pid={int(r["player_id"])}" target="_self" '
                 f'style="color:#1f2937;font-weight:700;font-size:13px;text-decoration:none;">{r["name"]}</a>'
                 f' <span style="color:#6b7280;font-size:12px;">{r.get("position", "?")}</span></div>'
-                f'<div><span style="font-weight:700;color:#111827;">{float(r.get("core_grade", 0)):.1f}</span>'
+                f'<div><span style="font-weight:700;color:#111827;">{float(r.get("core_grade", 0) or 0):.1f}</span>'
                 f' <span style="background:{_tc};color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:6px;">{_tier}</span>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
     else:
-        st.caption("No grades available.")
+        st.caption("No scored players yet.")
 
 with _tp2:
     st.markdown("### Moneyball Picks")
     st.caption("Most undervalued (positive Alpha) on the roster")
-    _under = df[df['opportunity_score'].fillna(0) > 0].nlargest(5, 'opportunity_score') if 'opportunity_score' in df.columns else pd.DataFrame()
+    _under = eligible_df[eligible_df['opportunity_score'].fillna(0) > 0].nlargest(5, 'opportunity_score') if not eligible_df.empty else pd.DataFrame()
     if not _under.empty:
         for _, r in _under.iterrows():
-            _alpha = int(float(r.get('opportunity_score', 0)))
+            _alpha = int(float(r.get('opportunity_score', 0) or 0))
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
                 f'padding:8px 12px;background:#ffffff;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px;">'
@@ -304,18 +375,25 @@ st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
 # ── Full Roster Table ──
 st.markdown("### Full Roster")
-st.caption(f"All {roster_size} eligible {selected_school} players — click a name for the full card")
+st.caption(
+    f"{roster_size} players total — {eligible_count} have eligibility-scored grades, "
+    f"{depth_count} are depth/unscored. Click a name for their full card; click the 🚪 to mark a player as departed."
+)
 
 # Filter row
-_f1, _f2, _f3 = st.columns([2, 2, 2])
+_f1, _f2, _f3, _f4 = st.columns([1.5, 1.5, 1.5, 2])
 with _f1:
     pos_options = ['All'] + sorted(df['position'].dropna().unique().tolist())
     _pos_filter = st.selectbox("Position", pos_options, key="team_pos_filter")
 with _f2:
-    tier_options = ['All', 'T1', 'T2', 'T3', 'T4']
+    tier_options = ['All', 'T1', 'T2', 'T3', 'T4', 'Unscored']
     _tier_filter = st.selectbox("Tier", tier_options, key="team_tier_filter")
 with _f3:
+    elig_options = ['All', 'Eligible only', 'Depth only']
+    _elig_filter = st.selectbox("Status", elig_options, key="team_elig_filter")
+with _f4:
     sort_options = {
+        'Snaps (High → Low)': ('snaps', False),
         'Core Grade (High → Low)': ('core_grade', False),
         'Output (High → Low)': ('output_score', False),
         'Alpha (Best → Worst)': ('opportunity_score', False),
@@ -328,79 +406,124 @@ with _f3:
 roster_df = df.copy()
 if _pos_filter != 'All':
     roster_df = roster_df[roster_df['position'] == _pos_filter]
-if _tier_filter != 'All':
+if _tier_filter == 'Unscored':
+    roster_df = roster_df[roster_df['eligibility_status'] == 'depth']
+elif _tier_filter != 'All':
     roster_df = roster_df[roster_df['tier'] == _tier_filter]
+if _elig_filter == 'Eligible only':
+    roster_df = roster_df[roster_df['eligibility_status'] == 'eligible']
+elif _elig_filter == 'Depth only':
+    roster_df = roster_df[roster_df['eligibility_status'] == 'depth']
 
 _sort_col, _sort_asc = sort_options[_sort_choice]
 if _sort_col in roster_df.columns:
     roster_df = roster_df.sort_values(_sort_col, ascending=_sort_asc, na_position='last')
 
-# Build table HTML
-rows_html = []
+# Roster table with per-row "mark departed" button.
+# Use streamlit columns (not HTML) so we get working buttons.
+_hdr = st.columns([0.35, 2.2, 0.6, 0.5, 0.55, 0.6, 0.6, 0.9, 0.8, 0.9, 0.4])
+for _c, _label in zip(_hdr, ['', 'Player', 'Pos', 'Tier', 'Snaps', 'Grade', 'Output', 'Value', 'Mkt', 'Alpha', '']):
+    _c.markdown(f'<span style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">{_label}</span>', unsafe_allow_html=True)
+
 for _, row in roster_df.iterrows():
     pid = int(row['player_id'])
     name = row.get('name', '?')
     pos = row.get('position', '?')
-    tier = row.get('tier', 'T4')
-    _tc = TIER_COLORS.get(tier, '#6b7280')
-    core = float(row.get('core_grade', 0)) if pd.notna(row.get('core_grade')) else 0
-    out = float(row.get('output_score', 0)) if pd.notna(row.get('output_score')) else 0
-    av = row.get('adjusted_value', 0)
-    mv = row.get('market_value', 0)
-    opp = row.get('opportunity_score', 0)
+    tier = row.get('tier', '—') or '—'
+    snaps = int(row.get('snaps', 0) or 0)
+    core = row.get('core_grade')
+    output = row.get('output_score')
+    av = row.get('adjusted_value')
+    mv = row.get('market_value')
+    opp = row.get('opportunity_score')
+    seasons_played = int(row.get('seasons_played', 1) or 1)
+    est_class = row.get('est_class', 'FR')
+    is_depth = row.get('eligibility_status') == 'depth'
+    is_xfer = row.get('transferred', False)
+    is_likely_grad = seasons_played >= 4
 
-    try:
-        opp_val = int(float(opp)) if pd.notna(opp) else 0
-    except (ValueError, TypeError):
-        opp_val = 0
-    if opp_val > 0:
-        alpha_html = f'<span style="color:#16a34a;font-weight:700;">+{fmt_money(abs(opp_val))}</span>'
-    elif opp_val < 0:
-        alpha_html = f'<span style="color:#dc2626;font-weight:700;">-{fmt_money(abs(opp_val))}</span>'
-    else:
-        alpha_html = '<span style="color:#6b7280;">$0</span>'
+    _tc = TIER_COLORS.get(tier, '#9ca3af')
 
-    # Flags
-    flags_raw = row.get('flags', '[]')
-    try:
-        flag_list = json.loads(flags_raw) if isinstance(flags_raw, str) else (flags_raw if isinstance(flags_raw, list) else [])
-    except (json.JSONDecodeError, TypeError):
-        flag_list = []
-    FLAG_ICON = {'BREAKOUT_CANDIDATE': '🚀', 'HIDDEN_GEM': '💎', 'REGRESSION_RISK': '📉',
-                 'PORTAL_VALUE': '🔄', 'EXPERIENCE_PREMIUM': '🎖️'}
-    flag_icons = ''.join(FLAG_ICON.get(f, '') for f in flag_list)
+    cols = st.columns([0.35, 2.2, 0.6, 0.5, 0.55, 0.6, 0.6, 0.9, 0.8, 0.9, 0.4])
 
-    rows_html.append(
-        f'<tr style="border-bottom:1px solid #f3f4f6;">'
-        f'<td style="padding:8px 10px;"><a href="/player_card?pid={pid}" target="_self" '
-        f'style="color:#1f2937;font-weight:600;text-decoration:none;">{name}</a></td>'
-        f'<td style="padding:8px 10px;font-size:12px;color:#6b7280;">{pos}</td>'
-        f'<td style="padding:8px 10px;"><span style="background:{_tc};color:#fff;font-size:10px;'
-        f'font-weight:700;padding:2px 6px;border-radius:3px;">{tier}</span></td>'
-        f'<td style="padding:8px 10px;text-align:right;font-weight:700;">{core:.1f}</td>'
-        f'<td style="padding:8px 10px;text-align:right;">{out:.1f}</td>'
-        f'<td style="padding:8px 10px;text-align:right;font-size:12px;color:#16a34a;">{fmt_money(av)}</td>'
-        f'<td style="padding:8px 10px;text-align:right;font-size:12px;color:#6b7280;">{fmt_money(mv)}</td>'
-        f'<td style="padding:8px 10px;text-align:right;">{alpha_html}</td>'
-        f'<td style="padding:8px 10px;text-align:center;font-size:14px;">{flag_icons}</td>'
-        f'</tr>'
+    # Class hint chip (estimated from seasons_played since class_year is NULL in our data)
+    _cy_color = {'FR': '#3b82f6', 'SO': '#10b981', 'JR': '#f59e0b', 'SR': '#ef4444',
+                 'GS': '#8b5cf6'}.get(est_class, '#9ca3af')
+    _cy_tip = f"{seasons_played} season{'s' if seasons_played != 1 else ''} of stats — estimated {est_class}"
+    _cy_chip = (f'<span title="{_cy_tip}" style="background:{_cy_color}22;color:{_cy_color};font-size:9px;'
+                f'font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;cursor:help;">'
+                f'~{est_class}</span>')
+    _xfer_chip = ('<span title="Transferred in this season" style="cursor:help;font-size:10px;margin-left:4px;">🔁</span>'
+                  if is_xfer else '')
+    _depth_chip = ('<span style="background:#f3f4f6;color:#6b7280;font-size:9px;font-weight:700;'
+                   'padding:1px 4px;border-radius:3px;margin-left:4px;">DEPTH</span>'
+                   if is_depth else '')
+    _grad_chip = ('<span title="4+ seasons of stats — likely graduating" '
+                  'style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;'
+                  'padding:1px 4px;border-radius:3px;margin-left:4px;cursor:help;">⏰ LIKELY GRAD</span>'
+                  if is_likely_grad else '')
+
+    cols[0].markdown(f'<span style="font-size:14px;">{"🎯" if is_depth else ""}</span>', unsafe_allow_html=True)
+    cols[1].markdown(
+        f'<a href="/player_card?pid={pid}" target="_self" '
+        f'style="color:#1f2937;font-weight:600;text-decoration:none;font-size:13px;">{name}</a>'
+        + _cy_chip + _xfer_chip + _depth_chip + _grad_chip,
+        unsafe_allow_html=True,
     )
+    cols[2].markdown(f'<span style="font-size:12px;color:#6b7280;">{pos}</span>', unsafe_allow_html=True)
+    cols[3].markdown(
+        f'<span style="background:{_tc};color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;">{tier}</span>'
+        if tier != '—' else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+        unsafe_allow_html=True,
+    )
+    cols[4].markdown(f'<span style="font-size:12px;color:#6b7280;">{snaps:,}</span>', unsafe_allow_html=True)
+    cols[5].markdown(
+        f'<span style="font-weight:700;font-size:13px;">{float(core):.1f}</span>' if pd.notna(core)
+        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+        unsafe_allow_html=True,
+    )
+    cols[6].markdown(
+        f'<span style="font-size:12px;">{float(output):.1f}</span>' if pd.notna(output)
+        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+        unsafe_allow_html=True,
+    )
+    cols[7].markdown(
+        f'<span style="font-size:12px;color:#16a34a;">{fmt_money(av)}</span>' if pd.notna(av)
+        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+        unsafe_allow_html=True,
+    )
+    cols[8].markdown(
+        f'<span style="font-size:12px;color:#6b7280;">{fmt_money(mv)}</span>' if pd.notna(mv)
+        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+        unsafe_allow_html=True,
+    )
+    if pd.notna(opp):
+        _opp_int = int(float(opp))
+        _opp_color = '#16a34a' if _opp_int > 0 else '#dc2626' if _opp_int < 0 else '#6b7280'
+        _opp_sign = '+' if _opp_int > 0 else ('-' if _opp_int < 0 else '')
+        cols[9].markdown(
+            f'<span style="font-weight:700;font-size:12px;color:{_opp_color};">{_opp_sign}{fmt_money(abs(_opp_int))}</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        cols[9].markdown('<span style="color:#d1d5db;font-size:12px;">—</span>', unsafe_allow_html=True)
 
-table_html = (
-    '<table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">'
-    '<thead>'
-    '<tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">'
-    '<th style="padding:10px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Player</th>'
-    '<th style="padding:10px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Pos</th>'
-    '<th style="padding:10px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Tier</th>'
-    '<th style="padding:10px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Grade</th>'
-    '<th style="padding:10px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Output</th>'
-    '<th style="padding:10px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Value</th>'
-    '<th style="padding:10px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Mkt</th>'
-    '<th style="padding:10px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Alpha</th>'
-    '<th style="padding:10px;text-align:center;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;">Flags</th>'
-    '</tr></thead><tbody>' + ''.join(rows_html) + '</tbody></table>'
-)
-st.markdown(table_html, unsafe_allow_html=True)
+    # Mark-as-departed toggle — persists to DB
+    is_departed = pid in departures
+    if cols[10].button('🚪' if not is_departed else '↩️', key=f'dep_{pid}',
+                       help='Mark departed (graduated / transfer out / etc.) — saved across sessions'
+                       if not is_departed
+                       else 'Restore this player to your projection'):
+        try:
+            if is_departed:
+                unmark_player_departed(user_email, selected_school, season_sel, pid)
+                departures.discard(pid)
+            else:
+                mark_player_departed(user_email, selected_school, season_sel, pid)
+                departures.add(pid)
+            st.session_state[_dep_cache_key] = departures
+        except Exception:
+            pass
+        st.rerun()
 
 render_footer()

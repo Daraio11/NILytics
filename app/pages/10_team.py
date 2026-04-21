@@ -203,6 +203,10 @@ with _m3:
             st.session_state[_dep_cache_key] = set()
             st.rerun()
 
+# Hold onto the unfiltered roster so the Departed panel can still show
+# players even after the projection filter removes them from the main table.
+df_full = df.copy()
+
 # Apply projection filter: hide manual departures AND anyone with 4+ seasons of stats
 def _is_returning(row):
     pid = int(row.get('player_id'))
@@ -215,6 +219,46 @@ def _is_returning(row):
 
 if projecting:
     df = df[df.apply(_is_returning, axis=1)].copy()
+
+# ── Departed panel (always visible when there are marked departures) ──
+if departures:
+    _dep_df = df_full[df_full['player_id'].isin(departures)].copy()
+    with st.expander(
+        f"🚪 Departed / No Longer With Team ({len(departures)}) — click ↩️ to restore anyone you dropped by mistake",
+        expanded=True,
+    ):
+        if _dep_df.empty:
+            st.caption("Players marked as departed aren't in this season's roster data.")
+        for _, _dr in _dep_df.iterrows():
+            _dpid = int(_dr['player_id'])
+            _dcols = st.columns([3, 1.5, 1, 1])
+            _dcols[0].markdown(
+                f'<a href="/player_card?pid={_dpid}" target="_self" '
+                f'style="color:#1f2937;font-weight:600;text-decoration:none;font-size:13px;">{_dr.get("name", "?")}</a>'
+                f' <span style="color:#6b7280;font-size:12px;">{_dr.get("position", "?")}</span>',
+                unsafe_allow_html=True,
+            )
+            _dcols[1].markdown(
+                f'<span style="font-size:11px;color:#6b7280;">'
+                f'{int(_dr.get("seasons_played", 1) or 1)} seasons · ~{_dr.get("est_class", "—")}</span>',
+                unsafe_allow_html=True,
+            )
+            _tier = _dr.get('tier', '—') or '—'
+            _tc = TIER_COLORS.get(_tier, '#9ca3af')
+            _dcols[2].markdown(
+                (f'<span style="background:{_tc};color:#fff;font-size:10px;font-weight:700;'
+                 f'padding:2px 6px;border-radius:3px;">{_tier}</span>') if _tier != '—'
+                else '<span style="color:#d1d5db;font-size:12px;">—</span>',
+                unsafe_allow_html=True,
+            )
+            if _dcols[3].button("↩️ Restore", key=f"restore_{_dpid}", use_container_width=True):
+                try:
+                    unmark_player_departed(user_email, selected_school, season_sel, _dpid)
+                except Exception:
+                    pass
+                departures.discard(_dpid)
+                st.session_state[_dep_cache_key] = departures
+                st.rerun()
 
 # Split eligible vs depth for KPI computation (use eligible for value aggregates)
 eligible_df = df[df['eligibility_status'] == 'eligible'].copy()

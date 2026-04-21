@@ -112,7 +112,50 @@ def load_leaderboard(season: int):
     #   Positive alpha  = production > market → undervalued (good deal for buyer)
     #   Negative alpha  = market overpays production → overvalued
 
+    # Merge portal/transfer status for THIS season (player entered portal before/during season)
+    try:
+        transfer_map = load_transfer_map(season)
+        if transfer_map:
+            merged['transferred'] = merged['player_id'].map(lambda pid: pid in transfer_map)
+            merged['transfer_from'] = merged['player_id'].map(lambda pid: transfer_map.get(pid, {}).get('from'))
+        else:
+            merged['transferred'] = False
+            merged['transfer_from'] = None
+    except Exception:
+        merged['transferred'] = False
+        merged['transfer_from'] = None
+
     return merged
+
+
+@st.cache_data(ttl=600)
+def load_transfer_map(season: int) -> dict:
+    """
+    Return {player_id: {'from': from_school, 'to': to_school}} for players
+    who transferred INTO this season (from previous season).
+    """
+    sb = get_supabase()
+    rows = _paginated_fetch(
+        sb.table('portal_history').select('player_id, season, from_school, to_school').eq('season', season)
+    )
+    return {
+        int(r['player_id']): {'from': r.get('from_school'), 'to': r.get('to_school')}
+        for r in rows
+    }
+
+
+def get_transfer_status(player_id: int) -> list[dict]:
+    """
+    Return all transfer events for a specific player, sorted by season desc.
+    Each event: {'season', 'from_school', 'to_school'}
+    """
+    sb = get_supabase()
+    resp = (sb.table('portal_history')
+            .select('season, from_school, to_school')
+            .eq('player_id', int(player_id))
+            .order('season', desc=True)
+            .execute())
+    return resp.data or []
 
 
 @st.cache_data(ttl=300)
@@ -639,6 +682,56 @@ def delete_roster(roster_id: int):
     """Delete a saved roster."""
     sb = get_supabase()
     sb.table('saved_rosters').delete().eq('id', roster_id).execute()
+
+
+# ── Auto-save (persists roster per user across browser sessions) ──
+_AUTOSAVE_NAME = '__autosave__'
+
+
+def load_autosave_roster(user_email: str) -> dict | None:
+    """Fetch the auto-saved roster for this user. Returns None if none exists."""
+    import json
+    sb = get_supabase()
+    resp = (sb.table('saved_rosters').select('*')
+            .eq('user_email', user_email)
+            .eq('name', _AUTOSAVE_NAME)
+            .limit(1)
+            .execute())
+    if not resp.data:
+        return None
+    row = resp.data[0]
+    row['roster_data'] = json.loads(row['roster_data']) if isinstance(row['roster_data'], str) else row['roster_data']
+    row['slot_assignments'] = json.loads(row['slot_assignments']) if isinstance(row['slot_assignments'], str) else row['slot_assignments']
+    return row
+
+
+def save_autosave_roster(user_email: str, season: int, roster_data: dict,
+                          slot_assignments: dict, off_formation: str, def_formation: str,
+                          budget_preset: str):
+    """Upsert the auto-saved roster for this user."""
+    import json
+    sb = get_supabase()
+    payload = {
+        'user_email': user_email,
+        'name': _AUTOSAVE_NAME,
+        'season': season,
+        'roster_data': json.dumps({str(k): v for k, v in roster_data.items()}),
+        'slot_assignments': json.dumps({str(k): v for k, v in slot_assignments.items()}),
+        'off_formation': off_formation,
+        'def_formation': def_formation,
+        'budget_preset': budget_preset,
+        'updated_at': 'now()',
+    }
+    # Does one already exist?
+    existing = (sb.table('saved_rosters').select('id')
+                .eq('user_email', user_email)
+                .eq('name', _AUTOSAVE_NAME)
+                .limit(1)
+                .execute())
+    if existing.data:
+        sb.table('saved_rosters').update(payload).eq('id', existing.data[0]['id']).execute()
+    else:
+        sb.table('saved_rosters').insert(payload).execute()
 
 
 # ── Player Notes & Tags ──

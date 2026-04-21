@@ -273,6 +273,23 @@ if active_flag and 'flags' in df.columns:
         st.info(f"No players with {FLAG_CONFIG.get(active_flag, {}).get('label', active_flag)} flag.")
         st.stop()
 
+# ── Transfer Portal toggle ──
+_xfer_count = int(df['transferred'].fillna(False).sum()) if 'transferred' in df.columns else 0
+if _xfer_count > 0:
+    _xfc1, _xfc2 = st.columns([1, 4])
+    with _xfc1:
+        _transfers_only = st.checkbox(
+            f"🔁 Transferred this season ({_xfer_count})",
+            value=st.session_state.get('xfer_filter', False),
+            key="xfer_filter",
+            help="Show only players who changed schools since last season (detected from per-season PFF team assignments)",
+        )
+    if _transfers_only and 'transferred' in df.columns:
+        df = df[df['transferred'].fillna(False)]
+        if df.empty:
+            st.info("No transferred players match the current filters.")
+            st.stop()
+
 # ── View toggle ──
 VIEW_INFO = {
     "Scouting — Best Players": {
@@ -289,20 +306,42 @@ VIEW_INFO = {
     },
 }
 
-view = st.radio(
-    "View",
-    list(VIEW_INFO.keys()),
-    horizontal=True,
-    label_visibility="collapsed",
-)
+_view_col, _adj_col = st.columns([4, 1])
+with _view_col:
+    view = st.radio(
+        "View",
+        list(VIEW_INFO.keys()),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+with _adj_col:
+    conf_adjust = st.toggle(
+        "Conference-Adjusted Alpha",
+        value=st.session_state.get('conf_adj', False),
+        key="conf_adj",
+        help=(
+            "Recalculate Alpha relative to the player's position + conference peers. "
+            "Shows who's a bargain WITHIN their market tier — useful when your program "
+            "competes against a specific conference's typical spend, not the national average."
+        ),
+    )
+
+# Apply conference adjustment to alpha if toggle is on
+if conf_adjust and 'opportunity_score' in df.columns and 'conference' in df.columns and 'position' in df.columns:
+    # Median alpha per (conference, position)
+    _peer_median = (df.groupby(['conference', 'position'])['opportunity_score']
+                    .transform('median'))
+    df['opportunity_score_raw'] = df['opportunity_score']
+    df['opportunity_score'] = df['opportunity_score'] - _peer_median.fillna(0)
 
 # Contextual subtitle — reflects active flag filter
 _active_flag_label = FLAG_CONFIG.get(active_flag, {}).get('label', '') if active_flag else ''
+_caption_suffix = " · **Conference-Adjusted Alpha active** (relative to position+conference median)" if conf_adjust else ""
 if active_flag and _active_flag_label:
     _flag_count = flag_counts.get(active_flag, 0)
-    st.caption(f"Showing **{_flag_count} {_active_flag_label}** players · {VIEW_INFO[view]['description']}")
+    st.caption(f"Showing **{_flag_count} {_active_flag_label}** players · {VIEW_INFO[view]['description']}{_caption_suffix}")
 else:
-    st.caption(VIEW_INFO[view]['description'])
+    st.caption(VIEW_INFO[view]['description'] + _caption_suffix)
 
 # ── Column sort via query params ──
 # Sortable columns: key → (default_ascending)
@@ -492,7 +531,12 @@ for rank_idx, (_, row) in enumerate(page_df.iterrows(), start=start_idx + 1):
         f'<tr data-pid="{pid}">'
         f'<td style="text-align:center;font-size:10px;color:#9ca3af;">{rank_idx}</td>'
         f'<td style="text-align:left;"><a class="player-link" href="?pid={pid}" target="_self" style="font-weight:600;font-size:11px;">{name}</a></td>'
-        f'<td style="text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;">{school}</td>'
+        f'<td style="text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;">'
+        f'<a href="/team?school={school.replace(" ", "%20")}" target="_self" title="View {school} roster" '
+        f'style="color:#6b7280;text-decoration:none;border-bottom:1px dotted #d1d5db;">{school}</a>'
+        + (f' <span title="Transferred from {row.get("transfer_from", "?")}" '
+           f'style="cursor:help;font-size:10px;">🔁</span>' if row.get('transferred') else '')
+        + '</td>'
         f'<td style="text-align:center;font-size:10px;color:#6b7280;">{pos}</td>'
         f'<td style="text-align:center;color:{tier_color};font-weight:700;font-size:10px;">{tier}</td>'
         f'<td style="text-align:right;"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{grade_sq};margin-right:4px;vertical-align:middle;"></span><span style="font-size:11px;font-weight:600;color:#1f2937;">{cg:.1f}</span></td>'
@@ -525,6 +569,19 @@ def _sort_header(label, col_key, align='left'):
         f'title="Sort by {label}">{label}{arrow}</a>'
     )
 
+# Alpha header swaps label/tooltip depending on conference-adjusted mode
+if conf_adjust:
+    _alpha_header_html = (
+        '<th style="text-align:right;" title="Conference-Adjusted Alpha: player alpha minus '
+        'position+conference peer median. Positive = undervalued relative to conference norm.">'
+        f'{_sort_header("Alpha¹", "opportunity_score")}</th>'
+    )
+else:
+    _alpha_header_html = (
+        '<th style="text-align:right;" title="Value minus Market — positive = undervalued (Moneyball pick)">'
+        f'{_sort_header("Alpha", "opportunity_score")}</th>'
+    )
+
 table_html = (
     '<div class="pff-table-wrap" style="overflow-x:auto; -webkit-overflow-scrolling:touch;">'
     '<table class="pff-table" style="table-layout:fixed;width:100%;">'
@@ -553,7 +610,7 @@ table_html = (
     f'<th style="text-align:center;" title="Season-over-season trajectory">Trend</th>'
     f'<th style="text-align:right;" title="What production justifies — based on output, visibility, and conference">{_sort_header("Value", "adjusted_value")}</th>'
     f'<th style="text-align:right;" title="What the NIL market actually pays">{_sort_header("Mkt Value", "market_value")}</th>'
-    f'<th style="text-align:right;" title="Value minus Market — positive = undervalued (Moneyball pick)">{_sort_header("Alpha", "opportunity_score")}</th>'
+    f'{_alpha_header_html}'
     f'<th style="text-align:center;" title="Breakout, Hidden Gem, Regression, Portal Value, Experienced">Flags</th>'
     '</tr></thead>'
     '<tbody>' + ''.join(rows_html) + '</tbody>'
@@ -562,6 +619,14 @@ table_html = (
 )
 
 st.markdown(table_html, unsafe_allow_html=True)
+
+if conf_adjust:
+    st.caption(
+        "¹ **Conference-Adjusted Alpha** = player's raw alpha minus the median alpha of "
+        "players at the same position in the same conference. Positive values identify "
+        "players who are better deals than their conference peers — useful when you're "
+        "bidding against a specific market tier, not the national average."
+    )
 
 # JavaScript to handle player link clicks → navigate to player card
 nav_js = """

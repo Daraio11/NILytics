@@ -48,13 +48,15 @@ def render_logo_and_nav(active_page='leaderboard'):
     core_pages = [
         ('leaderboard', 'Leaderboard', 'pages/01_leaderboard.py'),
         ('player_card', 'Player Search', 'pages/02_player_card.py'),
+        ('team', 'Teams', 'pages/10_team.py'),
         ('gm_mode', 'GM Mode', 'pages/04_gm_mode.py'),
         ('recruiting', 'Recruiting', 'pages/07_recruiting.py'),
         ('alerts', 'Alerts', 'pages/08_alerts.py'),
-        ('lab', 'Lab', 'pages/06_lab.py'),
     ]
 
     secondary_pages = [
+        ('compare', 'Compare', 'pages/11_compare.py'),
+        ('lab', 'Lab', 'pages/06_lab.py'),
         ('methodology', 'Methodology', 'pages/03_methodology.py'),
         ('board', 'My Board', 'pages/09_board.py'),
     ]

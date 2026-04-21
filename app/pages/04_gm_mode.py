@@ -11,7 +11,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.data import (load_leaderboard, load_full_player_pool, load_stat_table_for_season,
-                       POSITION_STAT_TABLES, save_roster, list_rosters, load_roster, delete_roster)
+                       POSITION_STAT_TABLES, save_roster, list_rosters, load_roster, delete_roster,
+                       load_autosave_roster, save_autosave_roster)
 from app.components.filters import POSITIONS, MARKETS
 from app.components.card_front import fmt_money
 from app.components.exports import export_roster_csv
@@ -208,6 +209,40 @@ if 'gm_slot_assignments' not in st.session_state:
 # Initialize pagination state
 if 'gm_market_page' not in st.session_state:
     st.session_state['gm_market_page'] = 0
+
+# ── AUTO-LOAD: pull persisted roster from DB on first visit this session ──
+_autoload_email = user.get('email', 'test@nilytics.com')
+if (not st.session_state.get('gm_autoload_done')
+        and not st.session_state['gm_roster']):
+    try:
+        _auto = load_autosave_roster(_autoload_email)
+        if _auto and _auto.get('roster_data'):
+            st.session_state['gm_roster'] = {int(k): v for k, v in _auto['roster_data'].items()}
+            _slots = _auto.get('slot_assignments') or {}
+            st.session_state['gm_slot_assignments'] = _slots if isinstance(_slots, dict) else {}
+            if _auto.get('off_formation'):
+                st.session_state['off_formation'] = _auto['off_formation']
+            if _auto.get('def_formation'):
+                st.session_state['def_formation'] = _auto['def_formation']
+    except Exception:
+        pass  # Autoload is best-effort — don't block page on DB errors
+    st.session_state['gm_autoload_done'] = True
+
+
+def _autosave_roster():
+    """Persist current GM roster state to DB under the reserved autosave slot."""
+    try:
+        save_autosave_roster(
+            user_email=user.get('email', 'test@nilytics.com'),
+            season=st.session_state.get('gm_season', 2025),
+            roster_data=st.session_state.get('gm_roster', {}),
+            slot_assignments=st.session_state.get('gm_slot_assignments', {}),
+            off_formation=st.session_state.get('off_formation', 'Pro'),
+            def_formation=st.session_state.get('def_formation', '4-3'),
+            budget_preset=st.session_state.get('gm_budget_preset', 'Elite P4 Program'),
+        )
+    except Exception:
+        pass  # Autosave is best-effort — don't block UX on DB errors
 
 # ── Sidebar: Budget Setup ──
 st.sidebar.markdown("### Budget")
@@ -480,6 +515,7 @@ def _add_to_roster(pid, row_dict):
         except Exception:
             clean_dict[k] = v
     st.session_state['gm_roster'][pid] = clean_dict
+    _autosave_roster()
 
 
 def _remove_from_roster(pid):
@@ -492,6 +528,7 @@ def _remove_from_roster(pid):
     keys_to_remove = [k for k, v in slots.items() if v == pid]
     for k in keys_to_remove:
         del slots[k]
+    _autosave_roster()
 
 
 def _add_players_from_multiselect(selected_names, name_to_row):
@@ -1429,6 +1466,7 @@ elif roster_view == "Depth Chart":
             if st.button("⚠️ Clear Entire Roster", type="primary", key="clear_dc"):
                 st.session_state['gm_roster'] = {}
                 st.session_state['gm_slot_assignments'] = {}
+                _autosave_roster()
                 st.rerun()
 
 elif roster_view == "Optimizer":
@@ -1570,6 +1608,7 @@ elif roster_view == "Optimizer":
                             _pid = str(int(_pick['player_id']))
                             if _pid not in st.session_state.get('gm_roster', {}):
                                 st.session_state['gm_roster'][_pid] = _pick.to_dict()
+                        _autosave_roster()
                         st.rerun()
                 else:
                     st.warning("Could not find players that fit within your remaining budget.")
@@ -1861,6 +1900,7 @@ else:
             if st.button("⚠️ Clear Entire Roster", type="primary", key="clear_list"):
                 st.session_state['gm_roster'] = {}
                 st.session_state['gm_slot_assignments'] = {}
+                _autosave_roster()
                 st.rerun()
 
 

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from app.data import (load_player_info, load_player_history, load_comps,
                        load_leaderboard, load_player_stats, load_position_percentiles,
-                       get_player_note, save_player_note)
+                       get_player_note, save_player_note, get_transfer_status)
 from app.components.card_front import render_card_front_st, fmt_money
 from app.components.card_back import render_card_back
 from app.components.stats_display import render_player_stats
@@ -326,12 +326,34 @@ with _header_left:
     _traj_label = TRAJ_LABELS.get(_trajectory, 'Stable')
     _traj_css = TRAJ_CSS.get(_trajectory, 'traj-stable')
 
-    # Build meta line
-    meta_parts = [p for p in [_pos, _school, _conference, _market] if p]
+    # Build meta line — school is a clickable link to the team page
+    _school_url = _school.replace(" ", "%20") if _school else ""
+    _school_link = (
+        f'<a href="/team?school={_school_url}" target="_self" '
+        f'title="View {_school} roster" '
+        f'style="color:inherit;text-decoration:none;border-bottom:1px dotted rgba(0,0,0,0.25);">{_school}</a>'
+    ) if _school and _school != '?' else _school
+    meta_parts = [p for p in [_pos, _school_link, _conference, _market] if p]
+
+    # Transfer history for this player
+    _transfers = get_transfer_status(player_id)
+    _transfer_badge = ''
+    if _transfers:
+        _latest_xfer = _transfers[0]
+        _xfer_tooltip = (f"Transferred from {_latest_xfer.get('from_school', '?')} "
+                        f"to {_latest_xfer.get('to_school', '?')} ahead of {_latest_xfer.get('season', '?')} season")
+        _transfer_badge = (
+            f'<span title="{_xfer_tooltip}" '
+            f'style="display:inline-block;background:#fef3c7;color:#92400e;font-size:11px;'
+            f'font-weight:700;padding:3px 10px;border-radius:999px;margin-left:8px;'
+            f'border:1px solid #fcd34d;letter-spacing:0.04em;cursor:help;">'
+            f'🔁 TRANSFER</span>'
+        )
 
     st.markdown(
         f'<p class="player-header-name">{_name}'
-        f'<span class="tier-pill" style="background:{_tier_bg};color:{_tier_fg};" title="Tier based on Output Score percentile ranking">{_tier_label}</span></p>'
+        f'<span class="tier-pill" style="background:{_tier_bg};color:{_tier_fg};" title="Tier based on Output Score percentile ranking">{_tier_label}</span>'
+        f'{_transfer_badge}</p>'
         f'<p class="player-header-meta">{" &middot; ".join(meta_parts)}</p>'
         f'<span class="trend-badge {_traj_css}" title="Season-over-season trajectory trend">{_traj_label}</span>',
         unsafe_allow_html=True,
@@ -582,7 +604,12 @@ with _cmp_cols[1]:
 with _cmp_cols[2]:
     if st.session_state['compare_players']:
         _names = [p['name'] for p in st.session_state['compare_players'].values()]
-        st.caption(f"Comparing: {', '.join(_names)} ({len(_names)}/4)")
+        _col_a, _col_b = st.columns([3, 1])
+        with _col_a:
+            st.caption(f"Comparing: {', '.join(_names)} ({len(_names)}/4)")
+        with _col_b:
+            if st.button("Full View →", key="goto_compare_page", use_container_width=True):
+                st.switch_page("pages/11_compare.py")
 
 # Render comparison table if 2+ players
 if len(st.session_state['compare_players']) >= 2:
@@ -676,10 +703,11 @@ with _add_cols[0]:
     if st.button("➕ Add to GM Roster", key="add_to_gm", type="primary"):
         if 'gm_roster' not in st.session_state:
             st.session_state['gm_roster'] = {}
-        _pid_str = str(player_id)
-        if _pid_str not in st.session_state['gm_roster']:
-            st.session_state['gm_roster'][_pid_str] = {
-                'player_id': player_id,
+        # Use int key to match gm_mode's convention
+        _pid_int = int(player_id)
+        if _pid_int not in st.session_state['gm_roster']:
+            st.session_state['gm_roster'][_pid_int] = {
+                'player_id': _pid_int,
                 'name': player.get('name', '?'),
                 'position': player.get('position', '?'),
                 'school': player.get('school', '?'),
@@ -688,12 +716,26 @@ with _add_cols[0]:
                 'tier': latest_scores.get('tier', 'T4'),
                 'core_grade': latest_scores.get('core_grade', 0),
                 'output_score': latest_scores.get('output_score', 0),
-                'adjusted_value': latest_scores.get('adjusted_value', 0) if 'adjusted_value' not in latest_signals else latest_signals.get('market_value', 0),
-                'market_value': latest_scores.get('adjusted_value', 0),
+                'adjusted_value': latest_scores.get('adjusted_value', 0),       # production worth
+                'market_value': latest_signals.get('market_value', 0),          # market rate
                 'opportunity_score': latest_signals.get('opportunity_score', 0),
                 'trajectory_flag': latest_signals.get('trajectory_flag', 'STABLE'),
                 'flags': latest_signals.get('flags', '[]'),
             }
+            # Persist to DB so the roster survives refresh
+            try:
+                from app.data import save_autosave_roster
+                save_autosave_roster(
+                    user_email=user.get('email', 'test@nilytics.com'),
+                    season=int(latest_season) if latest_season else 2025,
+                    roster_data=st.session_state['gm_roster'],
+                    slot_assignments=st.session_state.get('gm_slot_assignments', {}),
+                    off_formation=st.session_state.get('off_formation', 'Pro'),
+                    def_formation=st.session_state.get('def_formation', '4-3'),
+                    budget_preset=st.session_state.get('gm_budget_preset', 'Elite P4 Program'),
+                )
+            except Exception:
+                pass
             st.success(f"Added {player.get('name', '?')} to GM Roster!")
         else:
             st.info(f"{player.get('name', '?')} is already on your GM Roster.")

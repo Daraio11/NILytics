@@ -43,26 +43,25 @@ def compute_flags(
     """
     flags = []
 
-    # NOTE: In the raw pipeline, opportunity_score = adjusted_value - market_value
-    # where adjusted_value = market rate, market_value = production/brand worth.
-    # Raw NEGATIVE = undervalued in display (production > market cost).
-    # Raw POSITIVE = overvalued in display (market cost > production).
+    # opportunity_score = adjusted_value (production) - market_value (market rate).
+    # POSITIVE = undervalued (production > market price, good deal for buyer).
+    # NEGATIVE = overvalued (market pays more than production warrants).
 
     # BREAKOUT_CANDIDATE: trending up with strong production and undervalued
     if star_rating is not None and star_rating >= 3:
         if (class_year in ('SO', 'JR', 'Sophomore', 'Junior')
                 and trajectory_flag in ('UP', 'BREAKOUT')
-                and opportunity_score < 0):
+                and opportunity_score > 0):
             flags.append('BREAKOUT_CANDIDATE')
     else:
         if (trajectory_flag == 'BREAKOUT'
                 and output_score >= 65
-                and opportunity_score < 0):
+                and opportunity_score > 0):
             flags.append('BREAKOUT_CANDIDATE')
 
     # HIDDEN_GEM: low recruit rank or unknown, high output, undervalued
     low_recruit = star_rating is None or star_rating <= 2
-    if low_recruit and output_score >= 70 and opportunity_score < 0:
+    if low_recruit and output_score >= 70 and opportunity_score > 0:
         flags.append('HIDDEN_GEM')
 
     # REGRESSION_RISK: meaningful production decline risk (kept selective)
@@ -70,7 +69,7 @@ def compute_flags(
     #   2. Breakout player the market has significantly overpriced (unsustainable spike)
     if trajectory_flag == 'DOWN' and tier in ('T1', 'T2'):
         flags.append('REGRESSION_RISK')
-    elif trajectory_flag == 'BREAKOUT' and opportunity_score > 200000:
+    elif trajectory_flag == 'BREAKOUT' and opportunity_score < -200000:
         flags.append('REGRESSION_RISK')
 
     # PORTAL_VALUE: high output at G6/FCS, would be undervalued at P4

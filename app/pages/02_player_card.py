@@ -185,7 +185,7 @@ if 'pid' in qp:
 # ── Main search bar (always visible at top) ──
 search = st.text_input(
     "Search players",
-    placeholder="Search by player name (e.g. Travis Hunter)...",
+    placeholder="Search by player name (e.g. Diego Pavia)...",
     label_visibility="collapsed",
     key="player_search_main",
 )
@@ -217,6 +217,9 @@ if search and len(search) >= 2:
                     if st.button("View →", key=f"search_nav_{pid}", type="primary"):
                         st.session_state['selected_player_id'] = pid
                         player_id = pid
+                        # Clear the search box so the dropdown doesn't persist
+                        if 'player_search_main' in st.session_state:
+                            del st.session_state['player_search_main']
                         st.rerun()
         else:
             st.info(f'No players match "{search}".')

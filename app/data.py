@@ -105,16 +105,12 @@ def load_leaderboard(season: int):
         if col in merged.columns:
             merged[col] = pd.to_numeric(merged[col], errors='coerce')
 
-    # Swap value semantics so display labels are correct:
-    #   adjusted_value (from valuation.py) = what teams pay → display as "Mkt Value"
-    #   market_value (from market_estimate.py) = production/brand worth → display as "Value"
-    # After swap: adjusted_value col = production worth ("Value"), market_value col = market rate ("Mkt Value")
-    if 'adjusted_value' in merged.columns and 'market_value' in merged.columns:
-        av_copy = merged['adjusted_value'].copy()
-        merged['adjusted_value'] = merged['market_value']
-        merged['market_value'] = av_copy
-        # Recompute alpha from swapped values: Value - Mkt = positive means undervalued
-        merged['opportunity_score'] = merged['adjusted_value'].fillna(0) - merged['market_value'].fillna(0)
+    # DB semantics (already correct — do NOT swap):
+    #   adjusted_value (from valuation.py NIL_RANGES)   = production worth  → "Value"
+    #   market_value   (from market_estimate.py)        = market rate       → "Mkt Value"
+    #   opportunity_score = adjusted_value - market_value
+    #   Positive alpha  = production > market → undervalued (good deal for buyer)
+    #   Negative alpha  = market overpays production → overvalued
 
     return merged
 

@@ -877,13 +877,13 @@ if budget > 0:
     pct_used = (total_market / budget * 100) if budget > 0 else 0
     bar_color = '#16A34A' if pct_used < 50 else '#F97316' if pct_used < 75 else '#DC2626'
     st.markdown(f'''
-    <div style="background:#e5e7eb; border-radius:6px; height:12px; overflow:hidden; margin:8px 0;">
+    <div style="background:#e5e7eb; border-radius:6px; height:12px; overflow:hidden; margin:8px 0 4px 0;">
         <div style="background:{bar_color}; height:100%; width:{min(pct_used,100):.1f}%; border-radius:6px; transition:width 0.3s;"></div>
     </div>
-    <p style="font-size:12px; color:#6b7280; margin:4px 0;">{pct_used:.0f}% of {fmt_money(budget)} used</p>
+    <p style="font-size:12px; color:#6b7280; margin:0 0 20px 0;">{pct_used:.0f}% of {fmt_money(budget)} used</p>
     ''', unsafe_allow_html=True)
 
-st.markdown("---")
+st.markdown("<hr style='margin:16px 0 24px 0; border:none; border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
 # ── Roster View Toggle (with visual grouping labels) ──
 st.markdown(

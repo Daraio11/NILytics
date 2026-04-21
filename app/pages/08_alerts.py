@@ -196,7 +196,7 @@ if not alerts:
             "This could mean no prior season data is available.")
 else:
     _type_filter = _af1.selectbox("Alert Type", ['All'] + _alert_types, key="alert_type_filter")
-    _sev_filter = _af2.selectbox("Severity", _severities, index=1, key="alert_sev_filter")
+    _sev_filter = _af2.selectbox("Severity", _severities, index=0, key="alert_sev_filter")
     _pos_filter = _af3.selectbox("Position", ['All'] + _positions, key="alert_pos_filter")
 
     filtered = alerts

@@ -197,11 +197,16 @@ if df.empty:
 
 # ── Search bar + Flag definitions ──
 FLAG_CONFIG = {
-    'BREAKOUT_CANDIDATE': {'icon': '🚀', 'label': 'Breakout', 'css': 'flag-breakout'},
-    'HIDDEN_GEM':         {'icon': '💎', 'label': 'Hidden Gem', 'css': 'flag-hidden'},
-    'REGRESSION_RISK':    {'icon': '📉', 'label': 'Regression', 'css': 'flag-regression'},
-    'PORTAL_VALUE':       {'icon': '🔄', 'label': 'Portal Value', 'css': 'flag-portal'},
-    'EXPERIENCE_PREMIUM': {'icon': '🎖️', 'label': 'Experienced', 'css': 'flag-experience'},
+    'BREAKOUT_CANDIDATE': {'icon': '🚀', 'label': 'Breakout', 'css': 'flag-breakout',
+                           'tip': 'Breakout Candidate — Young player trending up with undervalued alpha'},
+    'HIDDEN_GEM':         {'icon': '💎', 'label': 'Hidden Gem', 'css': 'flag-hidden',
+                           'tip': 'Hidden Gem — Low recruit rating, elite production, undervalued by market'},
+    'REGRESSION_RISK':    {'icon': '📉', 'label': 'Regression', 'css': 'flag-regression',
+                           'tip': 'Regression Risk — Declining production or unsustainable breakout spike'},
+    'PORTAL_VALUE':       {'icon': '🔄', 'label': 'Portal Value', 'css': 'flag-portal',
+                           'tip': 'Portal Value — G6/FCS elite who would be a bargain at P4'},
+    'EXPERIENCE_PREMIUM': {'icon': '🎖️', 'label': 'Experienced', 'css': 'flag-experience',
+                           'tip': 'Experience Premium — Multi-year P4 starter at premium position'},
 }
 
 # Count flags in dataset
@@ -226,9 +231,14 @@ with search_col1:
         key="leaderboard_search",
     )
 
-# Apply search filter
+# Apply search filter — matches player name, school, OR position
 if player_search and len(player_search) >= 2:
-    df = df[df['name'].str.contains(player_search, case=False, na=False)]
+    _q = player_search.strip()
+    _name_match = df['name'].str.contains(_q, case=False, na=False)
+    _school_match = df['school'].str.contains(_q, case=False, na=False) if 'school' in df.columns else False
+    # Position is an exact (case-insensitive) match so "QB" doesn't match "QBR" etc.
+    _pos_match = df['position'].str.upper() == _q.upper() if 'position' in df.columns else False
+    df = df[_name_match | _school_match | _pos_match]
     if df.empty:
         st.info(f'No players match "{player_search}".')
         st.stop()
@@ -408,11 +418,20 @@ page_df = sorted_df.iloc[start_idx:start_idx + rows_per_page]
 
 # ── Flags legend ──
 st.markdown(
-    '<p style="font-size:10px;color:#9ca3af;margin:4px 0 2px 0;padding:0;line-height:1.4;">'
-    '\U0001f680 Breakout &nbsp;&nbsp; \U0001f48e Hidden Gem &nbsp;&nbsp; '
-    '\U0001f4c9 Regression &nbsp;&nbsp; \U0001f504 Portal Value &nbsp;&nbsp; '
-    '\U0001f396\ufe0f Experienced'
-    '</p>',
+    '<div style="font-size:11px;color:#4b5563;margin:8px 0 6px 0;padding:8px 12px;'
+    'background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;line-height:1.6;">'
+    '<span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">Flag Legend</span>'
+    '<span style="margin-left:12px;" title="Young player trending up with undervalued alpha">'
+    '\U0001f680 <b>Breakout</b></span>'
+    '<span style="margin-left:16px;" title="Low recruit rating, elite production, undervalued by market">'
+    '\U0001f48e <b>Hidden Gem</b></span>'
+    '<span style="margin-left:16px;" title="Declining production or unsustainable breakout spike">'
+    '\U0001f4c9 <b>Regression</b></span>'
+    '<span style="margin-left:16px;" title="G6/FCS elite who would be a bargain at P4">'
+    '\U0001f504 <b>Portal Value</b></span>'
+    '<span style="margin-left:16px;" title="Multi-year P4 starter at premium position">'
+    '\U0001f396\ufe0f <b>Experience Premium</b></span>'
+    '</div>',
     unsafe_allow_html=True,
 )
 
@@ -465,7 +484,7 @@ for rank_idx, (_, row) in enumerate(page_df.iterrows(), start=start_idx + 1):
     except (json.JSONDecodeError, TypeError):
         flag_list = []
     flag_icons = ''.join(
-        f'<span title="{FLAG_CONFIG[f]["label"]}" style="cursor:help;">{FLAG_CONFIG[f]["icon"]}</span>'
+        f'<span title="{FLAG_CONFIG[f]["tip"]}" style="cursor:help;">{FLAG_CONFIG[f]["icon"]}</span>'
         for f in flag_list if f in FLAG_CONFIG
     )
 

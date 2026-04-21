@@ -73,12 +73,15 @@ def render_card_front_st(player, scores, signals, st_module, skip_header=False, 
     raw_market = signals.get('market_value', 0)
     raw_opp = signals.get('opportunity_score', 0)
 
-    # Swap semantics: adjusted_value (market rate) → Mkt Value, market_value (production) → Value
+    # DB semantics (use directly — do NOT swap):
+    #   adjusted_value = production worth (valuation.py)  → "Value"
+    #   market_value   = market rate      (market_estimate.py) → "Mkt Value"
+    #   opportunity_score = adjusted - market (positive = undervalued)
     has_signals = raw_market is not None and raw_market != 0
     if has_signals:
-        adjusted_value = raw_market     # "Value" = production worth (from market_estimate)
-        market_value = raw_adjusted     # "Mkt Value" = market rate (from valuation)
-        opp_score = -raw_opp            # flip alpha sign
+        adjusted_value = raw_adjusted   # "Value" = production worth
+        market_value = raw_market       # "Mkt Value" = market rate
+        opp_score = raw_opp             # positive = undervalued
     else:
         adjusted_value = raw_adjusted   # fallback: show what we have
         market_value = 0

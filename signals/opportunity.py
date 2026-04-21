@@ -2,8 +2,13 @@
 NILytics — Opportunity Score (Phase 3.3)
 
 opportunity_score = adjusted_value - market_value_estimate
-(Stored raw in DB; display layer negates and swaps columns so that
- positive Alpha = undervalued = production worth exceeds market cost.)
+
+Where:
+  adjusted_value = production worth (valuation.py NIL_RANGES)
+  market_value   = market rate      (market_estimate.py MARKET_RANGES)
+
+Positive alpha  = production > market → UNDERVALUED (good deal for buyer)
+Negative alpha  = market pays more than production warrants → OVERVALUED
 """
 
 

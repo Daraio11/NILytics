@@ -554,16 +554,26 @@ st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
 # ── Full Roster Table ──
 st.markdown("### Full Roster")
+_provisional_count = int(df.get('provisional', pd.Series(dtype=bool)).fillna(False).sum())
 st.caption(
-    f"{roster_size} players total — {eligible_count} have eligibility-scored grades, "
-    f"{depth_count} are depth/unscored. Click a name for their full card; click the 🚪 to mark a player as departed."
+    f"{roster_size} players total — {eligible_count} eligibility-scored, "
+    f"{_provisional_count} with provisional PFF grades (marked *), "
+    f"{depth_count - _provisional_count} with no usable grade yet. "
+    f"Click a name for their full card; click the 🚪 to mark a player as departed."
 )
 st.markdown(
     '<div style="font-size:11px;color:#6b7280;background:#f9fafb;border-left:3px solid #d1d5db;'
     'padding:6px 10px;border-radius:0 4px 4px 0;margin-bottom:8px;">'
-    '<b>Reading Alpha:</b> Green (+) means the player produces more than their NIL market price — a bargain. '
-    'Red (−) means the NIL market overpays for their production — common for star QBs in SEC/Big Ten where '
-    'bidding wars inflate cost. A negative alpha is a <i>pricing</i> signal, not a quality signal.'
+    '<b>Reading this roster:</b> '
+    '<b style="color:#111827;">Eligibility-scored</b> grades come from the full v1.1 model. '
+    '<b style="color:#111827;">* provisional</b> grades are the player\'s raw PFF grade from the '
+    'largest stats table they appear in — useful for depth/rotation evaluation even when snaps '
+    'don\'t clear the eligibility threshold. Tiers like <code>T2*</code> are approximations from '
+    'the provisional grade, not official. Alpha stays blank for non-scored players because there '
+    'is no market-rate baseline for them yet.<br>'
+    '<b>Reading Alpha:</b> Green (+) = player produces more than their NIL market price (bargain). '
+    'Red (−) = market overpays for their production (common for star QBs in SEC/Big Ten). '
+    'It\'s a <i>pricing</i> signal, not a quality signal.'
     '</div>',
     unsafe_allow_html=True,
 )
@@ -627,10 +637,12 @@ for _, row in roster_df.iterrows():
     seasons_played = int(row.get('seasons_played', 1) or 1)
     est_class = row.get('est_class', 'FR')
     is_depth = row.get('eligibility_status') == 'depth'
+    is_provisional = bool(row.get('provisional', False))
     is_xfer = row.get('transferred', False)
     is_likely_grad = seasons_played >= 4
 
-    _tc = TIER_COLORS.get(tier, '#9ca3af')
+    # Provisional tiers look like "T2*" — strip the asterisk for the color map
+    _tc = TIER_COLORS.get(tier.rstrip('*'), '#9ca3af')
 
     cols = st.columns([0.35, 2.2, 0.6, 0.5, 0.55, 0.6, 0.6, 0.9, 0.8, 0.9, 0.4])
 
@@ -659,22 +671,44 @@ for _, row in roster_df.iterrows():
         unsafe_allow_html=True,
     )
     cols[2].markdown(f'<span style="font-size:12px;color:#6b7280;">{pos}</span>', unsafe_allow_html=True)
-    cols[3].markdown(
-        f'<span style="background:{_tc};color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;">{tier}</span>'
-        if tier != '—' else '<span style="color:#d1d5db;font-size:12px;">—</span>',
-        unsafe_allow_html=True,
-    )
+    # Tier pill — provisional tiers are semi-transparent with tooltip
+    if tier != '—':
+        _tier_opacity = '0.65' if is_provisional else '1.0'
+        _tier_tip = ('Provisional tier from raw PFF grade — player did not meet the '
+                     'eligibility snaps threshold, so this is an approximation.') if is_provisional else ''
+        cols[3].markdown(
+            f'<span title="{_tier_tip}" style="background:{_tc};color:#fff;font-size:10px;'
+            f'font-weight:700;padding:2px 6px;border-radius:3px;opacity:{_tier_opacity};'
+            f'cursor:{"help" if is_provisional else "default"};">{tier}</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        cols[3].markdown('<span style="color:#d1d5db;font-size:12px;">—</span>', unsafe_allow_html=True)
+
     cols[4].markdown(f'<span style="font-size:12px;color:#6b7280;">{snaps:,}</span>', unsafe_allow_html=True)
-    cols[5].markdown(
-        f'<span style="font-weight:700;font-size:13px;">{float(core):.1f}</span>' if pd.notna(core)
-        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
-        unsafe_allow_html=True,
-    )
-    cols[6].markdown(
-        f'<span style="font-size:12px;">{float(output):.1f}</span>' if pd.notna(output)
-        else '<span style="color:#d1d5db;font-size:12px;">—</span>',
-        unsafe_allow_html=True,
-    )
+
+    # Core grade — dim + asterisk for provisional grades
+    if pd.notna(core):
+        _g_color = '#6b7280' if is_provisional else '#111827'
+        _g_suffix = ' <span title="Provisional raw PFF grade — not eligibility-certified" style="color:#9ca3af;cursor:help;">*</span>' if is_provisional else ''
+        cols[5].markdown(
+            f'<span style="font-weight:{"600" if is_provisional else "700"};font-size:13px;color:{_g_color};">'
+            f'{float(core):.1f}</span>{_g_suffix}',
+            unsafe_allow_html=True,
+        )
+    else:
+        cols[5].markdown('<span style="color:#d1d5db;font-size:12px;">—</span>', unsafe_allow_html=True)
+
+    # Output — dim + asterisk for provisional
+    if pd.notna(output):
+        _o_color = '#9ca3af' if is_provisional else '#374151'
+        _o_suffix = '<span title="Approximated from provisional grade — not a true percentile rank" style="color:#9ca3af;cursor:help;">*</span>' if is_provisional else ''
+        cols[6].markdown(
+            f'<span style="font-size:12px;color:{_o_color};">{float(output):.1f}</span>{_o_suffix}',
+            unsafe_allow_html=True,
+        )
+    else:
+        cols[6].markdown('<span style="color:#d1d5db;font-size:12px;">—</span>', unsafe_allow_html=True)
     cols[7].markdown(
         f'<span style="font-size:12px;color:#16a34a;">{fmt_money(av)}</span>' if pd.notna(av)
         else '<span style="color:#d1d5db;font-size:12px;">—</span>',

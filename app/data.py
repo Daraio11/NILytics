@@ -298,21 +298,31 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
     """
     sb = get_supabase()
 
-    # 1. Collect all player_ids + position + snaps per stats table
+    # 1. Collect all player_ids + position + snaps + raw PFF grade per stats table.
+    # The grade column gets us a provisional core_grade for DEPTH players who
+    # don't have a v1.1 score yet — same idea as load_full_player_pool.
     stats_tables = [
-        ('passing_stats', 'passing_snaps'),
-        ('rushing_stats', 'attempts'),
-        ('receiving_stats', 'routes'),
-        ('blocking_stats', 'snap_counts_block'),
-        ('defense_stats', 'snap_counts_defense'),
+        # (table, snap_col, grade_col_or_None_for_defense)
+        ('passing_stats',   'passing_snaps',       'grades_pass'),
+        ('rushing_stats',   'attempts',            'grades_run'),
+        ('receiving_stats', 'routes',              'grades_pass_route'),
+        ('blocking_stats',  'snap_counts_block',   'grades_pass_block'),
+        ('defense_stats',   'snap_counts_defense', None),   # handled specially
     ]
 
-    pid_rows = {}  # pid(int) -> {position, snaps}
-    for table_name, snap_col in stats_tables:
+    pid_rows = {}  # pid(int) -> {position, snaps, prov_grade}
+    for table_name, snap_col, grade_col in stats_tables:
         try:
+            if table_name == 'defense_stats':
+                select_cols = ('player_id, position, grades_pass_rush_defense, '
+                               'grades_run_defense, grades_coverage_defense, '
+                               + snap_col)
+            else:
+                select_cols = f'player_id, position, {snap_col}, {grade_col}'
+
             rows = _paginated_fetch(
                 sb.table(table_name)
-                .select(f'player_id, position, {snap_col}')
+                .select(select_cols)
                 .eq('team_name', school)
                 .eq('season', season)
             )
@@ -325,12 +335,35 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
                 except (ValueError, TypeError):
                     continue
                 snaps = float(r.get(snap_col, 0) or 0)
-                if pid not in pid_rows:
-                    pid_rows[pid] = {'position_raw': r.get('position'), 'snaps': snaps, 'stat_table': table_name}
+
+                # Extract a representative grade per row
+                if table_name == 'defense_stats':
+                    _gs = [float(r.get(c, 0) or 0) for c in
+                           ('grades_pass_rush_defense', 'grades_run_defense', 'grades_coverage_defense')]
+                    _valid = [g for g in _gs if g > 0]
+                    grade_here = sum(_valid) / len(_valid) if _valid else 0
                 else:
-                    # Keep the higher snap count as the primary record
-                    if snaps > pid_rows[pid]['snaps']:
-                        pid_rows[pid] = {'position_raw': r.get('position'), 'snaps': snaps, 'stat_table': table_name}
+                    grade_here = float(r.get(grade_col, 0) or 0)
+
+                if pid not in pid_rows:
+                    pid_rows[pid] = {
+                        'position_raw': r.get('position'),
+                        'snaps': snaps,
+                        'stat_table': table_name,
+                        'prov_grade': grade_here,
+                        'prov_snaps': snaps,
+                    }
+                else:
+                    existing = pid_rows[pid]
+                    # Keep the higher snap count as the primary position record
+                    if snaps > existing['snaps']:
+                        existing['position_raw'] = r.get('position')
+                        existing['snaps'] = snaps
+                        existing['stat_table'] = table_name
+                    # Keep the highest non-zero grade across tables for provisional
+                    if grade_here > (existing.get('prov_grade') or 0):
+                        existing['prov_grade'] = grade_here
+                        existing['prov_snaps'] = snaps
         except Exception:
             continue
 
@@ -420,6 +453,28 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
 
         pos_raw = info.get('position_raw') or player.get('position') or '?'
         position = POSITION_MAP.get(pos_raw, pos_raw)
+        is_eligible = pid in scores_data
+
+        # If the player is DEPTH (no v1.1 score), fall back to the raw PFF grade
+        # we collected during the stats-table scan. No output percentile is
+        # available, so we approximate with a linear map: grade 50 → 50th pct,
+        # grade 80 → 90th pct. Flagged in the UI via `provisional=True`.
+        _prov_grade = info.get('prov_grade') or 0
+        _core_grade = scores.get('core_grade') if is_eligible else (
+            round(_prov_grade, 1) if _prov_grade > 0 else None
+        )
+        _output_score = scores.get('output_score') if is_eligible else (
+            # Rough mapping: PFF grade 50 = 50th pct, 80 = 90th, 90 = 100th
+            min(100.0, max(0.0, (_prov_grade - 50) * 2 + 50))
+            if _prov_grade > 0 else None
+        )
+        _tier = scores.get('tier') if is_eligible else (
+            # Provisional tier from raw grade (approximate — not a true tier)
+            'T1*' if _prov_grade >= 80 else
+            'T2*' if _prov_grade >= 70 else
+            'T3*' if _prov_grade >= 60 else
+            'T4*' if _prov_grade > 0 else '—'
+        )
 
         _seasons_played = seasons_played_map.get(pid, 1)
         record = {
@@ -433,10 +488,11 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
             'class_year': player.get('class_year', ''),
             'seasons_played': _seasons_played,
             'snaps': info.get('snaps', 0),
-            'eligibility_status': 'eligible' if pid in scores_data else 'depth',
-            'core_grade': scores.get('core_grade'),
-            'output_score': scores.get('output_score'),
-            'tier': scores.get('tier', '—'),
+            'eligibility_status': 'eligible' if is_eligible else 'depth',
+            'provisional': not is_eligible and _prov_grade > 0,
+            'core_grade': _core_grade,
+            'output_score': _output_score,
+            'tier': _tier or '—',
             'adjusted_value': scores.get('adjusted_value'),
             'market_value': signals.get('market_value'),
             'opportunity_score': signals.get('opportunity_score'),

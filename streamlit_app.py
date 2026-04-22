@@ -48,17 +48,24 @@ df = load_leaderboard(2025)
 if not df.empty:
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Eligible Players", f"{len(df):,}")
+        st.metric("Eligible Players", f"{len(df):,}",
+                  help="Players who hit the scoring threshold this season (snaps_proxy ≥ 300 OR PFF industry rating ≥ 79.9). The full non-eligible pool also exists on the Teams page.")
     with col2:
         t1 = len(df[df['tier'] == 'T1'])
-        st.metric("Tier 1", f"{t1:,}")
+        st.metric("Tier 1", f"{t1:,}",
+                  help="Players whose Output Score places them in the top tier for their position. Frozen 2021-2025 baseline — NIL dollars never move tier boundaries.")
     with col3:
         if 'opportunity_score' in df.columns:
             gems = len(df[df['opportunity_score'] > 500000])
-            st.metric("High-Alpha", f"{gems:,}")
+            st.metric("High-Alpha", f"{gems:,}",
+                      help=("Players with alpha > +$500K — production worth exceeds market price by "
+                            "at least half a million. This is a deliberately high bar; most seasons "
+                            "only a handful clear it. Use the Leaderboard's 'Moneyball — Best Deals' "
+                            "view to browse all undervalued players."))
     with col4:
         positions = df['position'].nunique()
-        st.metric("Positions", f"{positions}")
+        st.metric("Positions", f"{positions}",
+                  help="Distinct position groups covered: QB, RB, WR, TE, OT, IOL, EDGE, IDL, LB, CB, S.")
 
     st.markdown("---")
 

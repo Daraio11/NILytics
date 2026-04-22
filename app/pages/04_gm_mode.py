@@ -12,8 +12,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from app.data import (load_leaderboard, load_full_player_pool, load_stat_table_for_season,
                        POSITION_STAT_TABLES, save_roster, list_rosters, load_roster, delete_roster,
-                       load_autosave_roster, save_autosave_roster,
-                       list_filter_profiles, save_filter_profile, delete_filter_profile)
+                       load_autosave_roster, save_autosave_roster)
+
+# Saved Filter Profiles ship alongside a newer data.py — import defensively
+# so a stale module cache on Streamlit Cloud never takes GM Mode down. If the
+# helpers aren't available yet, the Saved Filters row gracefully disappears.
+try:
+    from app.data import list_filter_profiles, save_filter_profile, delete_filter_profile
+    _FILTER_PROFILES_AVAILABLE = True
+except ImportError:
+    _FILTER_PROFILES_AVAILABLE = False
+    def list_filter_profiles(*_args, **_kwargs): return []
+    def save_filter_profile(*_args, **_kwargs): return None
+    def delete_filter_profile(*_args, **_kwargs): return None
 from app.components.filters import POSITIONS, MARKETS
 from app.components.card_front import fmt_money
 from app.components.exports import export_roster_csv
@@ -1939,9 +1950,12 @@ schools = ['All'] + sorted(df['school'].dropna().unique().tolist())
 _PROFILE_KEYS = ['gm_search', 'gm_pos', 'gm_tier', 'gm_conf', 'gm_school',
                  'gm_affordable', 'gm_portal', 'gm_active_flag_filter', 'gm_sort']
 
-try:
-    _saved_profiles = list_filter_profiles(user_email, page='gm_mode')
-except Exception:
+if _FILTER_PROFILES_AVAILABLE:
+    try:
+        _saved_profiles = list_filter_profiles(user_email, page='gm_mode')
+    except Exception:
+        _saved_profiles = []
+else:
     _saved_profiles = []
 
 _pf_c1, _pf_c2, _pf_c3, _pf_c4 = st.columns([2, 0.9, 1.2, 1])

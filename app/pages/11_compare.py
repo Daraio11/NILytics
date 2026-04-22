@@ -179,7 +179,23 @@ cmp_pids = list(cmp_data.keys())
 n = len(cmp_pids)
 
 # Header cards per player
-st.markdown("### Players")
+_pl_hdr, _pl_share = st.columns([5, 1.2])
+with _pl_hdr:
+    st.markdown("### Players")
+with _pl_share:
+    # Share-link near the heading for discoverability
+    _share_pids_top = ",".join(str(p) for p in cmp_pids)
+    _share_url_top = f"/compare?pids={_share_pids_top}"
+    if st.button("🔗 Copy share link", key="share_compare_top", use_container_width=True,
+                 help=("Copy a URL that opens this exact comparison — shareable with teammates. "
+                       "Anyone with the link sees the same players head-to-head.")):
+        import streamlit.components.v1 as _cmp_html_top
+        _cmp_html_top.html(
+            f"<script>navigator.clipboard.writeText(window.location.origin + '{_share_url_top}');</script>",
+            height=0,
+        )
+        st.toast(f"Link copied — {_share_url_top}", icon="🔗")
+
 _hdr_cols = st.columns(n)
 for i, pid in enumerate(cmp_pids):
     p = cmp_data[pid]
@@ -319,22 +335,7 @@ st.caption("💡 Green-highlighted cell = best value on that row. Alpha colored 
 
 # ── Summary Insights ──
 st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
-_qt_hdr, _qt_share = st.columns([5, 1])
-with _qt_hdr:
-    st.markdown("### Quick Take")
-with _qt_share:
-    # Share-link: encode the current comparison as a URL
-    _share_pids = ",".join(str(p) for p in cmp_pids)
-    _share_url = f"/compare?pids={_share_pids}"
-    if st.button("🔗 Copy link", key="share_compare", use_container_width=True,
-                 help="Copy a URL that opens this exact comparison in a new session (shareable with teammates)"):
-        # Use a small JS snippet to put it on the clipboard
-        import streamlit.components.v1 as _cmp_html
-        _cmp_html.html(
-            f"<script>navigator.clipboard.writeText(window.location.origin + '{_share_url}');</script>",
-            height=0,
-        )
-        st.toast(f"Link copied — {_share_url}", icon="🔗")
+st.markdown("### Quick Take")
 
 st.caption(
     f"Computed from most-recent season data on file for each player. "

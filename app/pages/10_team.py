@@ -141,7 +141,20 @@ with _h3:
 
 # ── Load the FULL roster (all players with any stats, not just eligible) ──
 with st.spinner(f"Loading {selected_school} roster..."):
-    df = load_team_roster(selected_school, season_sel)
+    try:
+        df = load_team_roster(selected_school, season_sel)
+    except Exception as _e:
+        st.error(
+            f"**Could not load {selected_school}'s roster.** "
+            f"Supabase returned: `{type(_e).__name__}: {_e}`. "
+            "This is usually a transient API hiccup — try reloading. If it persists, "
+            "pick a different school so the page stays usable."
+        )
+        # Offer an escape hatch so the user isn't stranded
+        if st.button("← Back to Leaderboard", key="team_err_back"):
+            st.switch_page("pages/01_leaderboard.py")
+        render_footer()
+        st.stop()
 
 if df.empty:
     st.info(f"No roster data for {selected_school} in {season_sel}.")

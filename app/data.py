@@ -250,26 +250,32 @@ def _load_seasons_played_map(school: str, season: int, player_ids: tuple) -> dic
     if not player_ids:
         return {}
     sb = get_supabase()
-    # Use rushing_stats as a cheap source since every position appears somewhere.
-    # Actually we need all five tables. Query each and union.
     seasons_by_pid: dict[int, set] = {}
 
+    # Normalize pids to native ints and batch small so URL length + transient
+    # failures never take down the whole lookup. Per-batch failures are logged
+    # and skipped — the worst case is an under-reported seasons_played count.
+    pids_int = [int(p) for p in player_ids]
     for table in ('passing_stats', 'rushing_stats', 'receiving_stats',
                   'blocking_stats', 'defense_stats'):
-        try:
-            # Batch the IN query
-            batch = list(player_ids)
-            rows = []
-            for i in range(0, len(batch), 500):
-                chunk = batch[i:i + 500]
-                resp = (sb.table(table).select('player_id, season')
-                        .in_('player_id', chunk).execute())
-                rows.extend(resp.data or [])
-            for r in rows:
-                pid = int(r['player_id'])
-                seasons_by_pid.setdefault(pid, set()).add(int(r['season']))
-        except Exception:
-            continue
+        for i in range(0, len(pids_int), 100):
+            chunk = pids_int[i:i + 100]
+            attempt = 0
+            while attempt < 3:
+                try:
+                    resp = (sb.table(table).select('player_id, season')
+                            .in_('player_id', chunk).execute())
+                    for r in (resp.data or []):
+                        try:
+                            pid = int(r['player_id'])
+                            seasons_by_pid.setdefault(pid, set()).add(int(r['season']))
+                        except (ValueError, TypeError, KeyError):
+                            continue
+                    break
+                except Exception:
+                    attempt += 1
+                    time.sleep(0.4 * attempt)
+            # else: exhausted retries — skip chunk, keep going
 
     return {pid: len(ss) for pid, ss in seasons_by_pid.items()}
 
@@ -301,7 +307,7 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
         ('defense_stats', 'snap_counts_defense'),
     ]
 
-    pid_rows = {}  # pid -> {position, snaps}
+    pid_rows = {}  # pid(int) -> {position, snaps}
     for table_name, snap_col in stats_tables:
         try:
             rows = _paginated_fetch(
@@ -311,8 +317,12 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
                 .eq('season', season)
             )
             for r in rows:
-                pid = r.get('player_id')
-                if pid is None:
+                pid_raw = r.get('player_id')
+                if pid_raw is None:
+                    continue
+                try:
+                    pid = int(pid_raw)
+                except (ValueError, TypeError):
                     continue
                 snaps = float(r.get(snap_col, 0) or 0)
                 if pid not in pid_rows:
@@ -327,44 +337,58 @@ def load_team_roster(school: str, season: int) -> pd.DataFrame:
     if not pid_rows:
         return pd.DataFrame()
 
-    all_pids = list(pid_rows.keys())
+    # Normalize to native Python ints so postgrest serializes them cleanly —
+    # numpy/pandas ints can trip the IN-list URL encoding on some versions.
+    all_pids = [int(p) for p in pid_rows.keys()]
+
+    def _fetch_in_batches(table, select_cols, eq_filters, pids, batch_size=100):
+        """
+        Run a .select().eq()...in_('player_id', batch).execute() in small
+        chunks. Per-chunk failures are isolated so one bad batch doesn't
+        zero out the entire fetch. Returns a flat list of rows.
+        """
+        all_rows = []
+        for i in range(0, len(pids), batch_size):
+            chunk = pids[i:i + batch_size]
+            attempt, last_err = 0, None
+            while attempt < 3:
+                try:
+                    q = sb.table(table).select(select_cols)
+                    for k, v in (eq_filters or {}).items():
+                        q = q.eq(k, v)
+                    resp = q.in_('player_id', chunk).execute()
+                    all_rows.extend(resp.data or [])
+                    break
+                except Exception as _e:
+                    last_err = _e
+                    attempt += 1
+                    time.sleep(0.5 * attempt)  # 0.5s, 1s, 1.5s
+            else:
+                # All 3 attempts failed — skip this chunk but keep going
+                import logging
+                logging.warning(f"load_team_roster: {table} chunk {i}-{i+len(chunk)} failed: {last_err}")
+        return all_rows
 
     # 2. Fetch player info for these pids
     players_data = {}
-    batch_size = 500
-    for i in range(0, len(all_pids), batch_size):
-        batch = all_pids[i:i + batch_size]
-        resp = (sb.table('players')
-                .select('player_id, name, position, school, conference, market, class_year')
-                .in_('player_id', batch)
-                .execute())
-        for p in resp.data or []:
-            players_data[p['player_id']] = p
+    for p in _fetch_in_batches('players',
+                                'player_id, name, position, school, conference, market, class_year',
+                                {}, all_pids):
+        players_data[int(p['player_id'])] = p
 
     # 3. Fetch scores (may be empty for depth players who didn't qualify)
     scores_data = {}
-    for i in range(0, len(all_pids), batch_size):
-        batch = all_pids[i:i + batch_size]
-        resp = (sb.table('player_scores')
-                .select('player_id, core_grade, output_score, tier, adjusted_value, base_value')
-                .eq('season', season)
-                .eq('model_version', 'v1.1')
-                .in_('player_id', batch)
-                .execute())
-        for s in resp.data or []:
-            scores_data[s['player_id']] = s
+    for s in _fetch_in_batches('player_scores',
+                                'player_id, core_grade, output_score, tier, adjusted_value, base_value',
+                                {'season': season, 'model_version': 'v1.1'}, all_pids):
+        scores_data[int(s['player_id'])] = s
 
     # 4. Fetch alpha signals (market, opportunity) for eligible players
     signals_data = {}
-    for i in range(0, len(all_pids), batch_size):
-        batch = all_pids[i:i + batch_size]
-        resp = (sb.table('alpha_signals')
-                .select('player_id, market_value, opportunity_score, trajectory_flag, flags')
-                .eq('season', season)
-                .in_('player_id', batch)
-                .execute())
-        for s in resp.data or []:
-            signals_data[s['player_id']] = s
+    for s in _fetch_in_batches('alpha_signals',
+                                'player_id, market_value, opportunity_score, trajectory_flag, flags',
+                                {'season': season}, all_pids):
+        signals_data[int(s['player_id'])] = s
 
     # 5. Fetch transfer status for the season
     try:

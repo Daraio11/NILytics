@@ -456,6 +456,69 @@ comps = load_comps(
 
 render_card_back(player, scores_df, signals_df, comps)
 
+# ── Transfer Portal Timeline (only if this player has portal history) ──
+if _transfers:
+    st.markdown("---")
+    st.markdown('<p class="section-header">🔁 Transfer Portal Timeline</p>', unsafe_allow_html=True)
+    st.caption(
+        "Per-season moves detected by comparing team affiliation across PFF stats. "
+        "Stages like 'Entered / Committed / Signed' aren't tracked in our DB yet — "
+        "use **My Notes & Tags** below to record a status you're monitoring."
+    )
+
+    # Sort ascending so the timeline reads chronologically top → bottom
+    _xfer_sorted = sorted(_transfers, key=lambda x: x.get('season') or 0)
+    _timeline_rows = []
+    for xi, xfer in enumerate(_xfer_sorted):
+        _is_last = (xi == len(_xfer_sorted) - 1)
+        _s = xfer.get('season', '?')
+        _from = xfer.get('from_school', '?') or '?'
+        _to = xfer.get('to_school', '?') or '?'
+        _pill_color = '#E8390E' if _is_last else '#9ca3af'
+        _timeline_rows.append(
+            f'<div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;">'
+            f'<div style="min-width:56px;font-size:12px;font-weight:700;color:{_pill_color};'
+            f'text-align:right;padding-top:2px;">{_s}</div>'
+            f'<div style="position:relative;min-width:18px;">'
+            f'<div style="position:absolute;left:6px;top:4px;bottom:-20px;'
+            f'width:2px;background:#e5e7eb;{"display:none;" if _is_last else ""}"></div>'
+            f'<div style="width:14px;height:14px;border-radius:50%;background:{_pill_color};'
+            f'margin-top:4px;position:relative;z-index:1;"></div></div>'
+            f'<div style="flex:1;font-size:13px;color:#1f2937;padding-top:2px;">'
+            f'<span style="font-weight:600;">{_from}</span>'
+            f'<span style="color:#6b7280;margin:0 6px;">→</span>'
+            f'<span style="font-weight:700;color:#111827;">{_to}</span>'
+            + (f' <span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;'
+               f'font-size:10px;font-weight:700;margin-left:6px;">LATEST</span>' if _is_last else '')
+            + '</div></div>'
+        )
+    st.markdown(
+        '<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;'
+        'padding:8px 16px;margin:6px 0 12px 0;">' + ''.join(_timeline_rows) + '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # User's tracked status from My Board (if any)
+    try:
+        _my_note = get_player_note(player_id, user.get('email', 'test@nilytics.com'))
+        if _my_note and _my_note.get('status'):
+            _st = _my_note['status']
+            _st_colors = {
+                'Watching': '#3b82f6', 'Targeting': '#f59e0b', 'In Negotiation': '#8b5cf6',
+                'Committed': '#16a34a', 'Signed': '#16a34a', 'Passed': '#6b7280',
+            }
+            _c = _st_colors.get(_st, '#6b7280')
+            st.markdown(
+                f'<div style="font-size:12px;color:#6b7280;margin-top:4px;">'
+                f'Your tracked status on this player: '
+                f'<span style="background:{_c}22;color:{_c};padding:2px 8px;border-radius:4px;'
+                f'font-weight:700;margin-left:4px;">{_st}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
+
 # ── CONTRACT PROJECTION ──
 if len(scores_df) >= 1:
     seasons_played = len(scores_df)

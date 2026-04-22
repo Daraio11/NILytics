@@ -261,25 +261,71 @@ else:
     _start = (_alert_page - 1) * ALERTS_PER_PAGE
     _page_groups = _groups[_start:_start + ALERTS_PER_PAGE]
 
+    # Session-based dismissal (per-player) so the user can clear noise during a scan.
+    # Keyed by season so switching seasons gives a fresh list.
+    _dismiss_key = f'dismissed_alerts_{_alert_season}'
+    if _dismiss_key not in st.session_state:
+        st.session_state[_dismiss_key] = set()
+
+    # "Dismiss all INFO" control above the paged list
+    _info_pids = {g['player_id'] for g in _groups
+                  if all(a['severity'] == 'info' for a in g['alerts'])}
+    _info_undismissed = _info_pids - st.session_state[_dismiss_key]
+    if _info_undismissed:
+        _dbc1, _dbc2 = st.columns([1, 4])
+        with _dbc1:
+            if st.button(f"Dismiss {len(_info_undismissed)} INFO alerts",
+                         key="dismiss_info", use_container_width=True,
+                         help="Hide every player whose alerts are all INFO-severity for this session"):
+                st.session_state[_dismiss_key] |= _info_undismissed
+                st.rerun()
+        with _dbc2:
+            if st.session_state[_dismiss_key]:
+                if st.button(f"Restore {len(st.session_state[_dismiss_key])} dismissed",
+                             key="restore_dismissed"):
+                    st.session_state[_dismiss_key] = set()
+                    st.rerun()
+
+    # Filter dismissed groups off the page
+    _page_groups = [g for g in _page_groups if g['player_id'] not in st.session_state[_dismiss_key]]
+
     for g in _page_groups:
         _n_alerts = len(g['alerts'])
         _max_sev = min(g['alerts'], key=lambda a: {'high': 0, 'medium': 1, 'info': 2}.get(a['severity'], 3))['severity']
         _color = _sev_colors.get(_max_sev, '#8b949e')
 
         with st.container():
-            # Player header with alert count badge
-            st.markdown(
-                f'<div style="background:#ffffff;border-left:3px solid {_color};padding:10px 14px;'
-                f'margin:8px 0 2px 0;border-radius:0 8px 8px 0;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                f'<a href="/player_card?pid={g["player_id"]}" target="_self" style="text-decoration:none;">'
-                f'<span style="font-size:14px;font-weight:700;color:#1f2937;cursor:pointer;">'
-                f'{g["player"]} ({g["position"]}, {g["school"]})</span></a>'
-                f'<span style="background:{_color}22;color:{_color};padding:2px 8px;border-radius:4px;'
-                f'font-size:11px;font-weight:700;">{_n_alerts} alert{"s" if _n_alerts > 1 else ""}</span></div>',
-                unsafe_allow_html=True,
-            )
-            # Show each alert as a sub-item
+            # Header row: name (click-to-open), alert count, View Card + Dismiss actions
+            _hc1, _hc2 = st.columns([5, 2])
+            with _hc1:
+                st.markdown(
+                    f'<div style="background:#ffffff;border-left:3px solid {_color};padding:10px 14px;'
+                    f'margin:8px 0 0 0;border-radius:0 8px 8px 0;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<a href="/player_card?pid={g["player_id"]}" target="_self" '
+                    f'style="text-decoration:none;" title="Open {g["player"]}\'s Player Card">'
+                    f'<span style="font-size:14px;font-weight:700;color:#1f2937;">{g["player"]}</span>'
+                    f' <span style="font-size:12px;color:#6b7280;">({g["position"]}, {g["school"]})</span>'
+                    f' <span style="color:#E8390E;font-size:12px;font-weight:700;margin-left:6px;">View →</span>'
+                    f'</a>'
+                    f'<span style="background:{_color}22;color:{_color};padding:2px 8px;border-radius:4px;'
+                    f'font-size:11px;font-weight:700;">{_n_alerts} alert{"s" if _n_alerts > 1 else ""}</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with _hc2:
+                _a1, _a2 = st.columns(2)
+                with _a1:
+                    if st.button("👤 Card", key=f"alert_card_{g['player_id']}",
+                                 use_container_width=True, help="Open player card"):
+                        st.session_state['selected_player_id'] = g['player_id']
+                        st.switch_page("pages/02_player_card.py")
+                with _a2:
+                    if st.button("✕", key=f"alert_dismiss_{g['player_id']}",
+                                 use_container_width=True,
+                                 help="Dismiss this player's alerts for this session"):
+                        st.session_state[_dismiss_key].add(g['player_id'])
+                        st.rerun()
+            # Alert sub-items
             for a in g['alerts']:
                 _ac = _sev_colors.get(a['severity'], '#8b949e')
                 st.markdown(

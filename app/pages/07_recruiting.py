@@ -304,7 +304,9 @@ elif rc_view.startswith("Portal Targets"):
                                          value=1_000_000, step=100_000, format="%d", key="rc_portal_max")
 
         # Filter to undervalued players
-        _portal = portal_df[portal_df['opportunity_score'].fillna(0) > 0].copy()
+        _portal_all = portal_df[portal_df['opportunity_score'].fillna(0) > 0].copy()
+        _total_undervalued = len(_portal_all)
+        _portal = _portal_all.copy()
         if _t_pos != 'All':
             _portal = _portal[_portal['position'] == _t_pos]
         if _t_tier != 'All':
@@ -317,7 +319,15 @@ elif rc_view.startswith("Portal Targets"):
         if _portal.empty:
             st.info("No portal targets match filters.")
         else:
-            st.markdown(f"**{len(_portal)} undervalued players** (potential portal targets)")
+            # Show filtered count and the total — eliminates the tab-vs-header count confusion.
+            _filt_note = "" if len(_portal) == _total_undervalued else (
+                f" <span style='color:#9ca3af;font-weight:400;'>of {_total_undervalued:,} "
+                f"total undervalued players (filters applied)</span>"
+            )
+            st.markdown(
+                f"**{len(_portal):,} undervalued players**{_filt_note}",
+                unsafe_allow_html=True,
+            )
 
             _class_pids = set(recruit_class.keys())
             _pdisp = _portal[['name', 'position', 'school', 'tier', 'core_grade', 'output_score',

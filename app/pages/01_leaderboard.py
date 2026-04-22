@@ -226,21 +226,19 @@ search_col1, search_col2 = st.columns([3, 1])
 with search_col1:
     player_search = st.text_input(
         "Search players",
-        placeholder="\U0001f50d Search by player name, school, or position...",
+        placeholder="\U0001f50d Search by player name or school (use the Position filter in the sidebar)...",
         label_visibility="collapsed",
         key="leaderboard_search",
     )
 
-# Apply search filter — matches player name, school, OR position
+# Apply search filter — matches player name OR school (position has its own sidebar dropdown)
 if player_search and len(player_search) >= 2:
     _q = player_search.strip()
     _name_match = df['name'].str.contains(_q, case=False, na=False)
     _school_match = df['school'].str.contains(_q, case=False, na=False) if 'school' in df.columns else False
-    # Position is an exact (case-insensitive) match so "QB" doesn't match "QBR" etc.
-    _pos_match = df['position'].str.upper() == _q.upper() if 'position' in df.columns else False
-    df = df[_name_match | _school_match | _pos_match]
+    df = df[_name_match | _school_match]
     if df.empty:
-        st.info(f'No players match "{player_search}".')
+        st.info(f'No players match "{player_search}". Try the sidebar filters for Position/Market/Conference.')
         st.stop()
 
 # ── Flag filter buttons ──

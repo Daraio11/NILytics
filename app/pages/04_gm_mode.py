@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from app.data import (load_leaderboard, load_full_player_pool, load_stat_table_for_season,
                        POSITION_STAT_TABLES, save_roster, list_rosters, load_roster, delete_roster,
-                       load_autosave_roster, save_autosave_roster)
+                       load_autosave_roster, save_autosave_roster,
+                       list_filter_profiles, save_filter_profile, delete_filter_profile)
 from app.components.filters import POSITIONS, MARKETS
 from app.components.card_front import fmt_money
 from app.components.exports import export_roster_csv
@@ -923,10 +924,14 @@ if budget > 0:
 st.markdown("<hr style='margin:16px 0 24px 0; border:none; border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
 # ── Roster View Toggle (with visual grouping labels) ──
+# 2 tabs in VIEW (List View, Depth Chart), 3 tabs in ANALYZE (Roster Analysis, What-If, Optimizer)
+# Match the flex ratios + add a divider line so the two groupings read cleanly even at 1280px.
 st.markdown(
-    '<div style="display:flex;gap:24px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:4px;">'
-    '<span style="flex:1;">VIEW</span>'
-    '<span style="flex:1.5;">ANALYZE</span>'
+    '<div style="display:flex;gap:12px;font-size:11px;color:#6b7280;text-transform:uppercase;'
+    'letter-spacing:0.06em;font-weight:700;margin-bottom:6px;align-items:center;">'
+    '<span style="flex:2;border-bottom:1px solid #d1d5db;padding-bottom:4px;">📋 VIEW</span>'
+    '<span style="color:#d1d5db;">│</span>'
+    '<span style="flex:3;border-bottom:1px solid #d1d5db;padding-bottom:4px;">📊 ANALYZE</span>'
     '</div>',
     unsafe_allow_html=True,
 )
@@ -960,8 +965,12 @@ if roster_view == "Roster Analysis":
 
         # ── Gap Analysis ──
         st.markdown('<p class="section-header" style="font-size:12px;font-weight:700;text-transform:uppercase;'
-                    'letter-spacing:0.08em;border-bottom:2px solid #E8390E;padding-bottom:6px;margin-bottom:12px;'
+                    'letter-spacing:0.08em;border-bottom:2px solid #E8390E;padding-bottom:6px;margin-bottom:6px;'
                     'color:#6b7280;">Position Gap Analysis</p>', unsafe_allow_html=True)
+        st.caption(
+            "Targets are **suggested depth chart counts** based on a standard college roster — not requirements. "
+            "Use them as a guideline to spot positional holes, not hard quotas."
+        )
 
         gap_html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">'
         critical_needs = []
@@ -1924,6 +1933,68 @@ with pm_right:
 # Build conference and school lists from the data
 conferences = ['All'] + sorted(df['conference'].dropna().unique().tolist())
 schools = ['All'] + sorted(df['school'].dropna().unique().tolist())
+
+# ── Saved Filter Profiles ──
+# Keys we persist per named profile — everything the Player Market filter bar exposes.
+_PROFILE_KEYS = ['gm_search', 'gm_pos', 'gm_tier', 'gm_conf', 'gm_school',
+                 'gm_affordable', 'gm_portal', 'gm_active_flag_filter', 'gm_sort']
+
+try:
+    _saved_profiles = list_filter_profiles(user_email, page='gm_mode')
+except Exception:
+    _saved_profiles = []
+
+_pf_c1, _pf_c2, _pf_c3, _pf_c4 = st.columns([2, 0.9, 1.2, 1])
+with _pf_c1:
+    _pf_names = ['— None —'] + [p['name'] for p in _saved_profiles]
+    _selected_pf = st.selectbox("Saved filter", _pf_names, key="gm_active_profile",
+                                 label_visibility="collapsed")
+with _pf_c2:
+    _pf_apply = st.button("Apply", key="pf_apply",
+                          disabled=(_selected_pf == '— None —'),
+                          use_container_width=True,
+                          help="Load this saved filter set into the Player Market below")
+with _pf_c3:
+    _pf_save_name = st.text_input("Name", placeholder="Name to save current filters...",
+                                   key="pf_save_name", label_visibility="collapsed")
+with _pf_c4:
+    _pf_save = st.button("💾 Save", key="pf_save", use_container_width=True,
+                         help="Save the Player Market filters below under this name")
+
+if _pf_apply and _selected_pf != '— None —':
+    _target = next((p for p in _saved_profiles if p['name'] == _selected_pf), None)
+    if _target:
+        _filters_raw = _target.get('filters') or {}
+        if isinstance(_filters_raw, str):
+            try:
+                _filters_raw = json.loads(_filters_raw)
+            except Exception:
+                _filters_raw = {}
+        for _k in _PROFILE_KEYS:
+            if _k in _filters_raw:
+                st.session_state[_k] = _filters_raw[_k]
+        st.toast(f"Applied filter profile: {_selected_pf}", icon="✅")
+        st.rerun()
+
+if _pf_save and _pf_save_name.strip():
+    _to_save = {k: st.session_state.get(k) for k in _PROFILE_KEYS if k in st.session_state}
+    try:
+        save_filter_profile(user_email, 'gm_mode', _pf_save_name.strip(), _to_save)
+        st.toast(f"Saved filter profile: {_pf_save_name.strip()}", icon="💾")
+        st.rerun()
+    except Exception as _e:
+        st.error(f"Could not save profile: {_e}")
+
+if _selected_pf != '— None —':
+    _target = next((p for p in _saved_profiles if p['name'] == _selected_pf), None)
+    if _target:
+        if st.button(f"🗑 Delete '{_selected_pf}'", key="pf_delete", type="secondary"):
+            try:
+                delete_filter_profile(_target['id'])
+                st.toast(f"Deleted filter profile: {_selected_pf}", icon="🗑")
+                st.rerun()
+            except Exception:
+                pass
 
 s1, s2, s3, s4, s5 = st.columns([2, 0.8, 0.6, 1, 1])
 search_name = s1.text_input("Search", placeholder="Search by name...", key="gm_search")

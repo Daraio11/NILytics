@@ -35,6 +35,40 @@ st.caption("Head-to-head comparison for up to 4 players. Add players from the Le
 
 # ── Handle query param pid additions (e.g., from Leaderboard) ──
 qp = st.query_params
+
+# Bulk restore from a shared comparison link: /compare?pids=123,456,789
+if 'pids' in qp:
+    try:
+        _raw = qp['pids']
+        _pid_list = [int(x.strip()) for x in _raw.split(',') if x.strip()]
+        st.session_state['compare_players'] = {}  # fresh slate for shared link
+        for _share_pid in _pid_list[:4]:
+            _pinfo = load_player_info(_share_pid)
+            _scores_df, _signals_df = load_player_history(_share_pid)
+            if _pinfo and not _scores_df.empty:
+                _latest_scores = _scores_df.sort_values('season', ascending=False).iloc[0].to_dict()
+                _latest_signals = (_signals_df.sort_values('season', ascending=False).iloc[0].to_dict()
+                                   if not _signals_df.empty else
+                                   {'market_value': 0, 'opportunity_score': 0, 'trajectory_flag': 'STABLE', 'flags': '[]'})
+                st.session_state['compare_players'][_share_pid] = {
+                    'name': _pinfo.get('name', '?'),
+                    'position': _pinfo.get('position', '?'),
+                    'school': _pinfo.get('school', '?'),
+                    'conference': _pinfo.get('conference', ''),
+                    'market': _pinfo.get('market', ''),
+                    'tier': _latest_scores.get('tier', 'T4'),
+                    'core_grade': float(_latest_scores.get('core_grade', 0) or 0),
+                    'output_score': float(_latest_scores.get('output_score', 0) or 0),
+                    'adjusted_value': float(_latest_scores.get('adjusted_value', 0) or 0),
+                    'market_value': float(_latest_signals.get('market_value', 0) or 0),
+                    'opportunity_score': float(_latest_signals.get('opportunity_score', 0) or 0),
+                    'trajectory_flag': _latest_signals.get('trajectory_flag', 'STABLE'),
+                    'flags': _latest_signals.get('flags', '[]'),
+                }
+        st.query_params.clear()
+    except (ValueError, TypeError):
+        pass
+
 if 'add_pid' in qp:
     try:
         _add_pid = int(qp['add_pid'])
@@ -160,13 +194,25 @@ for i, pid in enumerate(cmp_pids):
             f'</div></div>',
             unsafe_allow_html=True,
         )
-        _rc1, _rc2 = st.columns(2)
+        _rc1, _rc2, _rc3 = st.columns([1.5, 1, 1])
         with _rc1:
             if st.button("View Card", key=f"cmp_view_{pid}", use_container_width=True):
                 st.session_state['selected_player_id'] = pid
                 st.switch_page("pages/02_player_card.py")
         with _rc2:
-            if st.button("Remove", key=f"cmp_rm_{pid}", use_container_width=True):
+            # Swap left (disabled on first column)
+            can_swap_left = i > 0
+            if st.button("◀", key=f"cmp_swap_l_{pid}", use_container_width=True,
+                         help="Move this player one slot left" if can_swap_left else "Already leftmost",
+                         disabled=not can_swap_left):
+                # Rebuild dict with this pid swapped with the previous
+                _keys = list(cmp_data.keys())
+                _keys[i], _keys[i - 1] = _keys[i - 1], _keys[i]
+                st.session_state['compare_players'] = {k: cmp_data[k] for k in _keys}
+                st.rerun()
+        with _rc3:
+            if st.button("Remove", key=f"cmp_rm_{pid}", use_container_width=True,
+                         help="Remove this player from the comparison"):
                 del st.session_state['compare_players'][pid]
                 st.rerun()
 
@@ -273,7 +319,27 @@ st.caption("💡 Green-highlighted cell = best value on that row. Alpha colored 
 
 # ── Summary Insights ──
 st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
-st.markdown("### Quick Take")
+_qt_hdr, _qt_share = st.columns([5, 1])
+with _qt_hdr:
+    st.markdown("### Quick Take")
+with _qt_share:
+    # Share-link: encode the current comparison as a URL
+    _share_pids = ",".join(str(p) for p in cmp_pids)
+    _share_url = f"/compare?pids={_share_pids}"
+    if st.button("🔗 Copy link", key="share_compare", use_container_width=True,
+                 help="Copy a URL that opens this exact comparison in a new session (shareable with teammates)"):
+        # Use a small JS snippet to put it on the clipboard
+        import streamlit.components.v1 as _cmp_html
+        _cmp_html.html(
+            f"<script>navigator.clipboard.writeText(window.location.origin + '{_share_url}');</script>",
+            height=0,
+        )
+        st.toast(f"Link copied — {_share_url}", icon="🔗")
+
+st.caption(
+    f"Computed from most-recent season data on file for each player. "
+    f"Alpha = production value minus market price — positive = undervalued deal."
+)
 
 if n >= 2:
     # Find the best value buy (highest alpha) and highest grade

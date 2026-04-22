@@ -346,27 +346,149 @@ if 'position' in df.columns:
     pos_cols = st.columns(4)
     for i, (_, r) in enumerate(pos_stats.iterrows()):
         with pos_cols[i % 4]:
-            _avg_g = r['avg_grade'] if pd.notna(r['avg_grade']) else 0
+            _eligible = int(r.get('eligible', 0) or 0)
+            _has_scored = _eligible > 0 and pd.notna(r['avg_grade'])
+            _avg_g = r['avg_grade'] if _has_scored else None
             _alpha = r['total_alpha'] if pd.notna(r['total_alpha']) else 0
             _alpha_c = '#16a34a' if _alpha > 0 else '#dc2626' if _alpha < 0 else '#6b7280'
             _alpha_sign = '+' if _alpha > 0 else ''
-            _depth_note = f'{int(r["count"]) - int(r["eligible"])} depth' if r["count"] > r["eligible"] else ''
+            _depth_only = (_eligible == 0)
+            _depth_note = f'{int(r["count"]) - _eligible} depth' if r["count"] > _eligible else ''
+
+            _grade_html = (
+                f'Avg Grade <b style="color:#111827;">{_avg_g:.1f}</b>' if _has_scored
+                else '<span style="color:#9ca3af;font-style:italic;">No scored returners</span>'
+            )
+            _alpha_html = (
+                f'Alpha <b>{_alpha_sign}{fmt_money(int(_alpha))}</b>'
+                if (_has_scored and _alpha != 0)
+                else '<span style="color:#9ca3af;">—</span>'
+            )
+
             st.markdown(
-                f'<div class="pos-card">'
+                f'<div class="pos-card" title="Alpha = production value minus market price. Negative numbers just mean players are overpriced by NIL market, NOT that they\'re bad.">'
                 f'<div style="display:flex;justify-content:space-between;align-items:baseline;">'
                 f'<span class="pos-label">{r["position"]}</span>'
                 f'<span class="pos-count">{int(r["count"])}</span></div>'
                 f'<div style="font-size:11px;color:#6b7280;margin-top:4px;">'
-                f'Avg Grade <b style="color:#111827;">{_avg_g:.1f}</b>'
+                f'{_grade_html}'
                 + (f' · <span style="color:#9ca3af;">{_depth_note}</span>' if _depth_note else '')
                 + '</div>'
-                f'<div style="font-size:11px;color:{_alpha_c};margin-top:2px;">'
-                f'Alpha <b>{_alpha_sign}{fmt_money(int(_alpha))}</b></div>'
+                f'<div style="font-size:11px;color:{_alpha_c};margin-top:2px;">{_alpha_html}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         if (i + 1) % 4 == 0 and i + 1 < len(pos_stats):
             pos_cols = st.columns(4)
+
+st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+
+# ── Opponent Comparison (expandable) ──
+with st.expander("⚔️ Compare vs another team", expanded=False):
+    st.caption(
+        "Head-to-head position-group comparison. Great for game-week scouting — "
+        "where does the opponent outgrade us, and where are we stronger?"
+    )
+    _opp_schools = [s for s in schools_available if s != selected_school]
+    _opp_col1, _opp_col2 = st.columns([3, 1])
+    with _opp_col1:
+        opp_school = st.selectbox(
+            f"Opponent",
+            [""] + _opp_schools,
+            key=f"opp_school_{selected_school}",
+            label_visibility="collapsed",
+        )
+    if opp_school:
+        with st.spinner(f"Loading {opp_school} roster..."):
+            opp_df = load_team_roster(opp_school, season_sel)
+
+        if opp_df.empty:
+            st.info(f"No data for {opp_school}.")
+        else:
+            # Apply same projection filter to opponent so apples-to-apples
+            if projecting:
+                opp_dep = get_team_departures(user_email, opp_school, season_sel) if user_email else set()
+                def _opp_is_returning(row):
+                    pid = int(row.get('player_id'))
+                    if pid in opp_dep: return False
+                    if int(row.get('seasons_played', 1) or 1) >= 4: return False
+                    return True
+                opp_df = opp_df[opp_df.apply(_opp_is_returning, axis=1)].copy()
+
+            my_elig = df[df['eligibility_status'] == 'eligible']
+            opp_elig = opp_df[opp_df['eligibility_status'] == 'eligible']
+
+            # Position-by-position head-to-head
+            all_positions = sorted(set(my_elig['position'].dropna().tolist() + opp_elig['position'].dropna().tolist()))
+            _comp_rows = []
+            for pos in all_positions:
+                _my_pos = my_elig[my_elig['position'] == pos]
+                _opp_pos = opp_elig[opp_elig['position'] == pos]
+                _my_grade = _my_pos['core_grade'].dropna().mean() if not _my_pos.empty else None
+                _opp_grade = _opp_pos['core_grade'].dropna().mean() if not _opp_pos.empty else None
+                _my_top = _my_pos.nlargest(1, 'core_grade').iloc[0] if not _my_pos.empty and _my_pos['core_grade'].notna().any() else None
+                _opp_top = _opp_pos.nlargest(1, 'core_grade').iloc[0] if not _opp_pos.empty and _opp_pos['core_grade'].notna().any() else None
+
+                def _grade_cell(grade, top):
+                    if grade is None or pd.isna(grade):
+                        return '<span style="color:#9ca3af;">—</span>'
+                    _top_html = ''
+                    if top is not None:
+                        _top_html = (f'<br><span style="font-size:10px;color:#6b7280;">'
+                                     f'Top: {top["name"]} ({float(top["core_grade"]):.1f})</span>')
+                    return f'<b style="font-size:14px;">{grade:.1f}</b>{_top_html}'
+
+                # Decide winner
+                if _my_grade is not None and _opp_grade is not None and pd.notna(_my_grade) and pd.notna(_opp_grade):
+                    if _my_grade > _opp_grade:
+                        _my_bg, _opp_bg = '#f0fdf4', '#fef2f2'
+                    elif _opp_grade > _my_grade:
+                        _my_bg, _opp_bg = '#fef2f2', '#f0fdf4'
+                    else:
+                        _my_bg, _opp_bg = '#f9fafb', '#f9fafb'
+                else:
+                    _my_bg, _opp_bg = '#f9fafb', '#f9fafb'
+
+                _comp_rows.append(
+                    f'<tr>'
+                    f'<td style="padding:10px;background:#f9fafb;font-weight:700;font-size:12px;'
+                    f'color:#374151;text-transform:uppercase;letter-spacing:0.04em;">{pos}</td>'
+                    f'<td style="padding:10px;background:{_my_bg};text-align:center;">{_grade_cell(_my_grade, _my_top)}</td>'
+                    f'<td style="padding:10px;background:{_opp_bg};text-align:center;">{_grade_cell(_opp_grade, _opp_top)}</td>'
+                    f'</tr>'
+                )
+
+            # Tallies: how many positions each team wins
+            _my_wins = sum(1 for pos in all_positions
+                           if (my_elig[my_elig['position'] == pos]['core_grade'].mean() or 0) >
+                              (opp_elig[opp_elig['position'] == pos]['core_grade'].mean() or 0))
+            _opp_wins = sum(1 for pos in all_positions
+                            if (opp_elig[opp_elig['position'] == pos]['core_grade'].mean() or 0) >
+                               (my_elig[my_elig['position'] == pos]['core_grade'].mean() or 0))
+
+            _summary_color = '#16a34a' if _my_wins > _opp_wins else '#dc2626' if _opp_wins > _my_wins else '#6b7280'
+            st.markdown(
+                f'<div style="padding:8px 12px;background:{_summary_color}15;border:1px solid {_summary_color}44;'
+                f'border-radius:6px;margin:8px 0;font-size:13px;color:{_summary_color};">'
+                f'<b>{selected_school}</b> wins <b>{_my_wins}</b> position group{"s" if _my_wins != 1 else ""}, '
+                f'<b>{opp_school}</b> wins <b>{_opp_wins}</b>.'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                '<table style="width:100%;border-collapse:collapse;background:#ffffff;'
+                'border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:8px;">'
+                '<thead><tr style="background:#111827;color:#ffffff;">'
+                '<th style="padding:10px;text-align:left;font-size:11px;text-transform:uppercase;'
+                'letter-spacing:0.06em;">Position</th>'
+                f'<th style="padding:10px;text-align:center;font-size:11px;text-transform:uppercase;'
+                f'letter-spacing:0.06em;">{selected_school}</th>'
+                f'<th style="padding:10px;text-align:center;font-size:11px;text-transform:uppercase;'
+                f'letter-spacing:0.06em;">{opp_school}</th>'
+                '</tr></thead><tbody>' + ''.join(_comp_rows) + '</tbody></table>',
+                unsafe_allow_html=True,
+            )
 
 st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
@@ -422,6 +544,15 @@ st.markdown("### Full Roster")
 st.caption(
     f"{roster_size} players total — {eligible_count} have eligibility-scored grades, "
     f"{depth_count} are depth/unscored. Click a name for their full card; click the 🚪 to mark a player as departed."
+)
+st.markdown(
+    '<div style="font-size:11px;color:#6b7280;background:#f9fafb;border-left:3px solid #d1d5db;'
+    'padding:6px 10px;border-radius:0 4px 4px 0;margin-bottom:8px;">'
+    '<b>Reading Alpha:</b> Green (+) means the player produces more than their NIL market price — a bargain. '
+    'Red (−) means the NIL market overpays for their production — common for star QBs in SEC/Big Ten where '
+    'bidding wars inflate cost. A negative alpha is a <i>pricing</i> signal, not a quality signal.'
+    '</div>',
+    unsafe_allow_html=True,
 )
 
 # Filter row

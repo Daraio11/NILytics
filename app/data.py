@@ -205,6 +205,45 @@ def clear_team_departures(user_email: str, school: str, season: int):
      .execute())
 
 
+# ── Saved Filter Profiles (per user, per page) ──
+
+def list_filter_profiles(user_email: str, page: str = 'gm_mode') -> list[dict]:
+    """Return the user's saved filter profiles for a given page."""
+    sb = get_supabase()
+    resp = (sb.table('saved_filter_profiles').select('id, name, filters, updated_at')
+            .eq('user_email', user_email)
+            .eq('page', page)
+            .order('updated_at', desc=True)
+            .execute())
+    return resp.data or []
+
+
+def save_filter_profile(user_email: str, page: str, name: str, filters: dict) -> int:
+    """Upsert a filter profile by (user_email, page, name). Returns profile id."""
+    import json
+    sb = get_supabase()
+    payload = {
+        'user_email': user_email,
+        'page': page,
+        'name': name,
+        'filters': json.dumps(filters) if not isinstance(filters, str) else filters,
+        'updated_at': 'now()',
+    }
+    existing = (sb.table('saved_filter_profiles').select('id')
+                .eq('user_email', user_email).eq('page', page).eq('name', name)
+                .limit(1).execute())
+    if existing.data:
+        sb.table('saved_filter_profiles').update(payload).eq('id', existing.data[0]['id']).execute()
+        return existing.data[0]['id']
+    resp = sb.table('saved_filter_profiles').insert(payload).execute()
+    return resp.data[0]['id'] if resp.data else None
+
+
+def delete_filter_profile(profile_id: int):
+    sb = get_supabase()
+    sb.table('saved_filter_profiles').delete().eq('id', profile_id).execute()
+
+
 @st.cache_data(ttl=600)
 def _load_seasons_played_map(school: str, season: int, player_ids: tuple) -> dict:
     """Return {player_id: total_seasons_with_stats_ever} for a given set of pids."""

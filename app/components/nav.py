@@ -55,6 +55,7 @@ def render_logo_and_nav(active_page='leaderboard'):
     ]
 
     secondary_pages = [
+        ('getting_started', 'Getting Started', 'pages/12_getting_started.py'),
         ('compare', 'Compare', 'pages/11_compare.py'),
         ('lab', 'Lab', 'pages/06_lab.py'),
         ('methodology', 'Methodology', 'pages/03_methodology.py'),

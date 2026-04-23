@@ -40,6 +40,27 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# "New here?" onboarding banner
+_nh_col1, _nh_col2 = st.columns([5, 1.2])
+with _nh_col1:
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);'
+        'border:1px solid #fcd34d;border-radius:10px;padding:10px 16px;margin-bottom:16px;'
+        'display:flex;align-items:center;gap:12px;">'
+        '<div style="font-size:22px;">👋</div>'
+        '<div style="flex:1;">'
+        '<div style="font-size:13px;font-weight:700;color:#92400e;">New to NILytics?</div>'
+        '<div style="font-size:12px;color:#78350f;line-height:1.4;">'
+        'Read the 10-minute Getting Started guide — learn the six numbers that drive the '
+        'platform, see every page at a glance, and follow three end-to-end GM workflows.</div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+with _nh_col2:
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    if st.button("🚀 Start here", use_container_width=True, type="primary", key="dash_gs"):
+        st.switch_page("pages/12_getting_started.py")
+
 # Quick stats
 from app.data import load_leaderboard
 from app.components.card_front import fmt_money
